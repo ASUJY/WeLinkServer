@@ -1,4 +1,6 @@
 #include "server.h"
+#include "service.h"
+
 #include <functional>
 #include <string>
 
@@ -20,11 +22,14 @@ void Server::start() {
 
 void Server::OnConnection(const muduo::net::TcpConnectionPtr &conn) {
     if (!conn->connected()) {
+        Service::instance()->ClientCloseException(conn);
         conn->shutdown();
     }
 }
 
 void Server::OnMessage(const muduo::net::TcpConnectionPtr &conn, muduo::net::Buffer *buffer, muduo::Timestamp time) {
     std::string buf = buffer->retrieveAllAsString();
-
+    nlohmann::json js = nlohmann::json::parse(buf);
+    auto msgHandler = Service::instance()->GetHandler(js["msgtype"].get<int>());
+    msgHandler(conn, js, time);
 }
