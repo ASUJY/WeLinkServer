@@ -4,8 +4,8 @@ int main() {
 
     muduo::net::EventLoop loop;
 
-    // 定义监听地址：本地 127.0.0.1，端口 6000
-    muduo::net::InetAddress addr("127.0.0.1", 6000);
+    // 定义监听地址：本地 127.0.0.1，端口 9999
+    muduo::net::InetAddress addr("0.0.0.0", 9999);
     Server server(&loop, addr, "WeLinkServer");
     server.start();
 
