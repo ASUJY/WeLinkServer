@@ -45,7 +45,23 @@ void Service::ClientCloseException(const muduo::net::TcpConnectionPtr &conn) {
 
 void Service::Login(const muduo::net::TcpConnectionPtr &conn, 
     nlohmann::json &js, muduo::Timestamp time) {
-    
+    std::unordered_map<std::string, std::string> data = js["data"];
+
+    // 这里应该根据客户端传过来的用户名，或者账号，或者手机号来进行登录
+    User user;
+    user.SetUserName(data["username"]);
+    user.SetPwd(data["password"]);
+
+    bool success = m_userModel.Query(user);
+    nlohmann::json response;
+
+    if (success) {
+        LOG_INFO << "login success!!!!";
+        response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
+    } else {
+        response["msgtype"] = LOGIN_MSG_ACK_FAIL;
+    }
+    conn->send(response.dump());
 }
 
 void Service::Register(const muduo::net::TcpConnectionPtr &conn, 

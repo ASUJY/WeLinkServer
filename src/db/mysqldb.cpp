@@ -24,7 +24,7 @@ MySqlDB::~MySqlDB() {
 bool MySqlDB::Connect() {
     MYSQL *p = mysql_real_connect(m_conn, server.c_str(), user.c_str(), password.c_str(), dbname.c_str(), 3306, nullptr, 0);
 
-    if (!p) {
+    if (p != nullptr) {
         // C和C++代码默认的编码字符是ASCII，如果不设置，从MySQL上拉下来的中文显示会乱码
         mysql_query(m_conn, "set names gbk");
         LOG_INFO << "connect mysql success!";
@@ -41,4 +41,13 @@ bool MySqlDB::Update(string sql) {
         return false;
     }
     return true;
+}
+
+// 查询操作
+MYSQL_RES* MySqlDB::Query(string sql) {
+    if (mysql_query(m_conn, sql.c_str())) {
+        LOG_INFO << __FILE__ << ":" << __LINE__ << ":" << sql << "查询失败!";
+        return nullptr;
+    }
+    return mysql_use_result(m_conn);
 }

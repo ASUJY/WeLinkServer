@@ -8,6 +8,9 @@ class UserModel {
 public:
     // User表的增加方法
     bool Insert(User &user);
+
+    // 查询用户信息
+    bool Query(User &user);
 private:
 
 };

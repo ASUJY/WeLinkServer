@@ -17,3 +17,27 @@ bool UserModel::Insert(User &user) {
     }
     return false;
 }
+
+bool UserModel::Query(User &user) {
+    // 后续可以根据用户的账号，手机号，用户名进行登录
+    // 组装sql语句
+    char sql[1024] = {0};
+    sprintf(sql, "select * from im_user where nickname = '%s'", user.GetUserName().c_str());
+
+    MySqlDB mysql;
+    if (mysql.Connect()) {
+        MYSQL_RES *res = mysql.Query(sql);
+        if (res != nullptr) {
+            // 获取一行结果
+            MYSQL_ROW row = mysql_fetch_row(res);
+            if (row != nullptr) {
+                std::string passwd = row[3];
+                mysql_free_result(res);
+                if (passwd == user.GetPwd()) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}

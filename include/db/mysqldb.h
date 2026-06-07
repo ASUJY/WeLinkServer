@@ -13,7 +13,7 @@ public:
 
     bool Connect() override;
     bool Update(std::string sql) override;
-
+    MYSQL_RES* Query(std::string sql) override;
 private:
     MYSQL *m_conn;
 };
