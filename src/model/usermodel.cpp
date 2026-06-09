@@ -1,5 +1,6 @@
 #include "usermodel.h"
 #include "mysqldb.h"
+#include <iostream>
 
 bool UserModel::Insert(User &user) {
     char sql[1024] = {0};
@@ -40,4 +41,25 @@ bool UserModel::Query(User &user) {
         }
     }
     return false;
+}
+
+std::vector<std::string> UserModel::QueryUserInfo(std::string username) {
+    char sql[1024] = {0};
+    sprintf(sql, "select * from im_user where nickname = '%s'", username.c_str());
+    std::cout << "sql: " << sql << std::endl;
+    std::vector<std::string> resVec;
+    MySqlDB mysql;
+    if (mysql.Connect()) {
+        MYSQL_RES *res = mysql.Query(sql);
+        if (res != nullptr) {
+            // 获取一行结果
+            MYSQL_ROW row = mysql_fetch_row(res);
+            if (row != nullptr) {
+                resVec.emplace_back(row[2]);
+                resVec.emplace_back(row[3]);
+                mysql_free_result(res);
+            }
+        }
+    }
+    return resVec;
 }

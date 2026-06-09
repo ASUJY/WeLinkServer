@@ -3,6 +3,7 @@
 
 #include <muduo/net/TcpConnection.h>
 #include <unordered_map>
+#include <mutex>
 
 #include "json.hpp"
 #include "usermodel.h"
@@ -17,10 +18,14 @@ public:
     MsgHandler GetHandler(int msgType);
     void ClientCloseException(const muduo::net::TcpConnectionPtr &conn);
 
-    void Login(const  muduo::net::TcpConnectionPtr &conn, 
+    void Login(const muduo::net::TcpConnectionPtr &conn, 
                 nlohmann::json &js, muduo::Timestamp time);
     
-    void Register(const  muduo::net::TcpConnectionPtr &conn, 
+    void Register(const muduo::net::TcpConnectionPtr &conn, 
+                nlohmann::json &js, muduo::Timestamp time);
+    void GetFriendInfo(const muduo::net::TcpConnectionPtr &conn, 
+                nlohmann::json &js, muduo::Timestamp time);
+    void AddFriendReq(const muduo::net::TcpConnectionPtr &conn, 
                 nlohmann::json &js, muduo::Timestamp time);
 
 private:
@@ -28,6 +33,9 @@ private:
 
 private:
     std::unordered_map<int, MsgHandler> m_msgHandlerMap;
+    std::unordered_map<int, muduo::net::TcpConnectionPtr> m_userConnMap;
+
+    std::mutex m_connMtx;
 
     // 数据操作类对象
     UserModel m_userModel;

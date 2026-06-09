@@ -25,6 +25,14 @@ Service::Service() {
         this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3
         )}
     );
+
+    m_msgHandlerMap.insert(
+        {E_MSG_TYPE::GET_FRIEND_INFO_REQ, std::bind(&Service::GetFriendInfo, 
+        this,  std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
+
+    m_msgHandlerMap.insert(
+    {E_MSG_TYPE::ADD_FRIEND_REQ, std::bind(&Service::AddFriendReq,
+    this,  std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
 }
 
 MsgHandler Service::GetHandler(int msgType) {
@@ -58,6 +66,10 @@ void Service::Login(const muduo::net::TcpConnectionPtr &conn,
     if (success) {
         LOG_INFO << "login success!!!!";
         response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
+        {
+            std::lock_guard<std::mutex> locker(m_connMtx);
+            m_userConnMap.insert({user.GetUserId(), conn});
+        }
     } else {
         response["msgtype"] = LOGIN_MSG_ACK_FAIL;
     }
@@ -85,3 +97,26 @@ void Service::Register(const muduo::net::TcpConnectionPtr &conn,
     }
     conn->send(response.dump());
 }
+
+void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr &conn, 
+    nlohmann::json &js, muduo::Timestamp time) {
+    std::map<std::string, std::string> data = js["data"];
+    std::cout << data["username"] << std::endl;
+    nlohmann::json response;
+    std::vector<std::string> resVec = m_userModel.QueryUserInfo(data["username"]);
+    if (!resVec.empty()) {
+        response["msgtype"] = GET_FRIEND_INFO_SUCCESS;
+        response["name"] = resVec[0];
+        response["phone"] = resVec[1];
+        conn->send(response.dump());
+    }
+}
+
+// void Service::AddFriendReq(const muduo::net::TcpConnectionPtr &conn, 
+//     nlohmann::json &js, muduo::Timestamp time) {
+//     std::map<std::string, std::string> data = js["data"];
+//     nlohmann::json response;
+
+
+//     response["msgtype"] = ADD_FRIEND_REQ;
+// }
