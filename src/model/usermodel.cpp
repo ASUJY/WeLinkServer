@@ -33,12 +33,16 @@ bool UserModel::Query(User &user) {
             MYSQL_ROW row = mysql_fetch_row(res);
             if (row != nullptr) {
                 std::string passwd = row[3];
-                mysql_free_result(res);
                 if (passwd == user.GetPwd()) {
+                    // std::cout << row[1] << " " << row[2] << " " << row[3] << " " << row[4];
+                    user.SetUserName(row[2]);
+                    user.SetUserId(atoi(row[0]));
+                    mysql_free_result(res);
                     return true;
                 }
             }
         }
+        mysql_free_result(res);
     }
     return false;
 }
@@ -55,6 +59,7 @@ std::vector<std::string> UserModel::QueryUserInfo(std::string username) {
             // 获取一行结果
             MYSQL_ROW row = mysql_fetch_row(res);
             if (row != nullptr) {
+                resVec.emplace_back(row[0]);
                 resVec.emplace_back(row[2]);
                 resVec.emplace_back(row[3]);
                 mysql_free_result(res);

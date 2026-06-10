@@ -2,7 +2,7 @@
 #define COMMON_H
 
 enum E_MSG_TYPE : int {
-    UNKNOWN = 0,
+     UNKNOWN = 0,
     LOGIN_MSG,
     LOGIN_MSG_ACK_SUCCESS,
     LOGIN_MSG_ACK_FAIL,
@@ -11,7 +11,7 @@ enum E_MSG_TYPE : int {
     REG_MSG_ACK_FAIL,
     GET_FRIEND_INFO_REQ,
     GET_FRIEND_INFO_SUCCESS,
-    // ADD_FRIEND_REQ
+    ADD_FRIEND_REQ,
 };
 
 #endif

@@ -66,6 +66,9 @@ void Service::Login(const muduo::net::TcpConnectionPtr &conn,
     if (success) {
         LOG_INFO << "login success!!!!";
         response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
+        LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
+        response["data"]["username"] = user.GetUserName();
+        response["data"]["userid"] = user.GetUserId();
         {
             std::lock_guard<std::mutex> locker(m_connMtx);
             m_userConnMap.insert({user.GetUserId(), conn});
@@ -106,17 +109,38 @@ void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr &conn,
     std::vector<std::string> resVec = m_userModel.QueryUserInfo(data["username"]);
     if (!resVec.empty()) {
         response["msgtype"] = GET_FRIEND_INFO_SUCCESS;
-        response["name"] = resVec[0];
-        response["phone"] = resVec[1];
+        response["data"]["userid"] = resVec[0];
+        response["data"]["username"] = resVec[1];
+        response["data"]["phone"] = resVec[2];
+        LOG_INFO << resVec[0] << " GetFriendInfo " << resVec[1];
         conn->send(response.dump());
     }
 }
 
-// void Service::AddFriendReq(const muduo::net::TcpConnectionPtr &conn, 
-//     nlohmann::json &js, muduo::Timestamp time) {
-//     std::map<std::string, std::string> data = js["data"];
-//     nlohmann::json response;
+void Service::AddFriendReq(const muduo::net::TcpConnectionPtr &conn, 
+    nlohmann::json &js, muduo::Timestamp time) {
+    std::map<std::string, std::string> data = js["data"];
+    nlohmann::json response;
+     std::cout << "00000" << std::endl;
+    int userid = stoi(data["userid"]);
+     std::cout << "1111" << std::endl;
+    std::string username = data["username"];
+     std::cout << "2222" << std::endl;
+    int friendid = stoi(data["friendid"]);
+     std::cout << "3333" << std::endl;
+    std::string friendname = data["friendname"];
+    std::cout << "hhhhh" << std::endl;
+    if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
+        nlohmann::json response;
+        response["senderid"] = userid;
+        response["sendername"] = username;
+        response["receiverid"] = friendid;
+        response["receivername"] = friendname;
+        response["msgtype"] = ADD_FRIEND_REQ;
+        m_userConnMap[friendid]->send(response.dump());
+    } else {
+        // 用户离线
+    }
 
-
-//     response["msgtype"] = ADD_FRIEND_REQ;
-// }
+    
+}
