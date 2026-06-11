@@ -34,8 +34,7 @@ bool UserModel::Query(User &user) {
             if (row != nullptr) {
                 std::string passwd = row[3];
                 if (passwd == user.GetPwd()) {
-                    // std::cout << row[1] << " " << row[2] << " " << row[3] << " " << row[4];
-                    user.SetUserName(row[2]);
+                    user.SetUserName(row[3]);
                     user.SetUserId(atoi(row[0]));
                     mysql_free_result(res);
                     return true;

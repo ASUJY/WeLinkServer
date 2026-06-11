@@ -48,7 +48,16 @@ MsgHandler Service::GetHandler(int msgType) {
 }
 
 void Service::ClientCloseException(const muduo::net::TcpConnectionPtr &conn) {
-
+    {
+        std::lock_guard<std::mutex> locker(m_connMtx);
+        for (auto it = m_userConnMap.begin(); it != m_userConnMap.end(); ++it) {
+            if (it->second == conn) {
+                LOG_ERROR << "连接发送错误，断开";
+                m_userConnMap.erase(it);
+                break;
+            }
+        }
+    }
 }
 
 void Service::Login(const muduo::net::TcpConnectionPtr &conn, 
@@ -64,16 +73,18 @@ void Service::Login(const muduo::net::TcpConnectionPtr &conn,
     nlohmann::json response;
 
     if (success) {
+        {
+            std::lock_guard<std::mutex> locker(m_connMtx);
+            m_userConnMap.insert({user.GetUserId(), conn});
+        }
+
         LOG_INFO << "login success!!!!";
         response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
         LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
         response["data"]["username"] = user.GetUserName();
         response["data"]["userid"] = user.GetUserId();
-        {
-            std::lock_guard<std::mutex> locker(m_connMtx);
-            m_userConnMap.insert({user.GetUserId(), conn});
-        }
     } else {
+        LOG_INFO << "login failed!!!!";
         response["msgtype"] = LOGIN_MSG_ACK_FAIL;
     }
     conn->send(response.dump());
@@ -104,15 +115,13 @@ void Service::Register(const muduo::net::TcpConnectionPtr &conn,
 void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr &conn, 
     nlohmann::json &js, muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
-    std::cout << data["username"] << std::endl;
     nlohmann::json response;
     std::vector<std::string> resVec = m_userModel.QueryUserInfo(data["username"]);
     if (!resVec.empty()) {
         response["msgtype"] = GET_FRIEND_INFO_SUCCESS;
         response["data"]["userid"] = resVec[0];
-        response["data"]["username"] = resVec[1];
-        response["data"]["phone"] = resVec[2];
-        LOG_INFO << resVec[0] << " GetFriendInfo " << resVec[1];
+        response["data"]["username"] = resVec[2];
+        response["data"]["phone"] = resVec[1];
         conn->send(response.dump());
     }
 }
@@ -121,26 +130,24 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr &conn,
     nlohmann::json &js, muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
-     std::cout << "00000" << std::endl;
     int userid = stoi(data["userid"]);
-     std::cout << "1111" << std::endl;
     std::string username = data["username"];
-     std::cout << "2222" << std::endl;
     int friendid = stoi(data["friendid"]);
-     std::cout << "3333" << std::endl;
     std::string friendname = data["friendname"];
-    std::cout << "hhhhh" << std::endl;
-    if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
-        nlohmann::json response;
-        response["senderid"] = userid;
-        response["sendername"] = username;
-        response["receiverid"] = friendid;
-        response["receivername"] = friendname;
-        response["msgtype"] = ADD_FRIEND_REQ;
-        m_userConnMap[friendid]->send(response.dump());
-    } else {
-        // 用户离线
-    }
 
+    response["data"]["senderid"] = userid;
+    response["data"]["sendername"] = username;
+    response["data"]["receiverid"] = friendid;
+    response["data"]["receivername"] = friendname;
+    response["msgtype"] = ADD_FRIEND_REQ;
+
+    {
+        std::lock_guard<std::mutex> locker(m_connMtx);
+        if (m_userConnMap.find(friendid) != m_userConnMap.end()) {     
+            m_userConnMap[friendid]->send(response.dump());
+        } else {
+            // 用户离线
+        }
+    }
     
 }

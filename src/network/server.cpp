@@ -28,7 +28,7 @@ void Server::start() {
 void Server::OnConnection(const muduo::net::TcpConnectionPtr &conn) {
     if (!conn->connected()) {
         Service::instance()->ClientCloseException(conn);
-        conn->shutdown();
+        // conn->shutdown();
     }
 }
 
