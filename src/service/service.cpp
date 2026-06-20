@@ -1,5 +1,6 @@
 #include "service.h"
 #include "common.h"
+#include "snowflake.h"
 #include <muduo/base/Logging.h>
 #include <iostream>
 
@@ -81,8 +82,10 @@ void Service::Login(const muduo::net::TcpConnectionPtr &conn,
         LOG_INFO << "login success!!!!";
         response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
         LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
-        response["data"]["username"] = user.GetUserName();
         response["data"]["userid"] = user.GetUserId();
+        response["data"]["username"] = user.GetUserName();
+        response["data"]["phone"] = user.GetUserPhone();
+        response["data"]["avator"] = user.GetUserAvatar();
     } else {
         LOG_INFO << "login failed!!!!";
         response["msgtype"] = LOGIN_MSG_ACK_FAIL;
@@ -98,6 +101,12 @@ void Service::Register(const muduo::net::TcpConnectionPtr &conn,
     user.SetUserPhone(data["phone"]);
     user.SetUserName(data["username"]);
     user.SetPwd(data["password"]);
+    user.SetUserAvatar(data["avatar"]);
+
+    uint32_t workerId = 1;
+    uint32_t datacenterId = 1;
+    SnowflakeGenerator gen(workerId, datacenterId);
+    user.SetUserId(gen.NextId());
 
     bool state = m_userModel.Insert(user);
     nlohmann::json response;
@@ -105,9 +114,13 @@ void Service::Register(const muduo::net::TcpConnectionPtr &conn,
         // register success
         LOG_INFO << "register success!!!!";
         response["msgtype"] = REG_MSG_ACK_SUCCESS;
+        response["data"]["userid"] = user.GetUserId();
+        response["data"]["username"] = user.GetUserName();
+        response["data"]["phone"] = user.GetUserPhone();
+        response["data"]["avator"] = user.GetUserAvatar();
     } else {
         // register failed
-        response["msgtype"] = REG_MSG_ACK_SUCCESS;
+        response["msgtype"] = REG_MSG_ACK_FAIL;
     }
     conn->send(response.dump());
 }
