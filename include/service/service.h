@@ -27,6 +27,8 @@ public:
                 nlohmann::json &js, muduo::Timestamp time);
     void AddFriendReq(const muduo::net::TcpConnectionPtr &conn, 
                 nlohmann::json &js, muduo::Timestamp time);
+    void AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn, 
+                nlohmann::json &js, muduo::Timestamp time);
 
 private:
     Service();  // 构造函数私有化，禁止外部创建
