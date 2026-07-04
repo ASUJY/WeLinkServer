@@ -38,6 +38,9 @@ Service::Service() {
     m_msgHandlerMap.insert(
     {E_MSG_TYPE::ADD_FRIEND_ACK_AGREE, std::bind(&Service::AddFriendAckAgree,
     this,  std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
+
+    m_msgHandlerMap.insert({ONE_CHAT_MSG, std::bind(&Service::oneChat, 
+    this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
 }
 
 MsgHandler Service::GetHandler(int msgType) {
@@ -187,6 +190,7 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn,
     response["data"]["receiverid"] = friendid;
     response["data"]["receivername"] = friendname;
     response["msgtype"] = ADD_FRIEND_ACK_AGREE;
+    LOG_INFO << "Service::AddFriendAckAgree: userid" << userid << " username: " << username << " friendid: " << friendid << " friendname: " << friendname;
 
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
@@ -196,4 +200,22 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn,
             // 用户离线
         }
     }
+}
+
+void Service::oneChat(const muduo::net::TcpConnectionPtr &conn, 
+                nlohmann::json &js, muduo::Timestamp time) {
+
+    std::map<std::string, std::string> data = js["data"];
+    
+    uint64_t receiverid = stol(data["receiverId"]);
+    LOG_INFO << "Service::oneChat userid: " << receiverid;
+    {
+        std::lock_guard<std::mutex> locker(m_connMtx);
+        auto it = m_userConnMap.find(receiverid);
+        if (it != m_userConnMap.end()) {
+            it->second->send(js.dump());
+            return;
+        }
+    }
+
 }

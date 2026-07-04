@@ -14,6 +14,7 @@ enum E_MSG_TYPE : int {
     GET_FRIEND_INFO_FAILED,
     ADD_FRIEND_REQ,
     ADD_FRIEND_ACK_AGREE,
+    ONE_CHAT_MSG
 };
 
 #endif
