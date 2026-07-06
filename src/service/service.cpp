@@ -1,58 +1,62 @@
 #include "service.h"
 #include "common.h"
 #include "snowflake.h"
-#include <muduo/base/Logging.h>
 #include <iostream>
+#include <muduo/base/Logging.h>
 
 // 单例
-Service* Service::instance() {
+Service *Service::instance() {
     static Service service; // C++11 保证局部静态变量初始化线程安全
     return &service;
 }
 
 Service::Service() {
     // m_msgHandlerMap.insert(
-    //     {E_MSG_TYPE::LOGIN_MSG, std::bind(&Service::Login, 
-    //     this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
+    //     {E_MSG_TYPE::LOGIN_MSG, std::bind(&Service::Login,
+    //     this, std::placeholders::_1, std::placeholders::_2,
+    //     std::placeholders::_3)});
 
     // 等同于与上面的写法
-    m_msgHandlerMap.insert({E_MSG_TYPE::LOGIN_MSG, 
-        [this](auto&& conn, auto&& js, auto&& time) {
-            this->Login(conn, js, time);
-        }});
+    m_msgHandlerMap.insert(
+        {E_MSG_TYPE::LOGIN_MSG, [this](auto &&conn, auto &&js, auto &&time) {
+             this->Login(conn, js, time);
+         }});
 
     m_msgHandlerMap.insert(
-        {E_MSG_TYPE::REG_MSG, std::bind(&Service::Register, 
-        this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3
-        )}
-    );
+        {E_MSG_TYPE::REG_MSG,
+         std::bind(&Service::Register, this, std::placeholders::_1,
+                   std::placeholders::_2, std::placeholders::_3)});
 
     m_msgHandlerMap.insert(
-        {E_MSG_TYPE::GET_FRIEND_INFO_REQ, std::bind(&Service::GetFriendInfo, 
-        this,  std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
+        {E_MSG_TYPE::GET_FRIEND_INFO_REQ,
+         std::bind(&Service::GetFriendInfo, this, std::placeholders::_1,
+                   std::placeholders::_2, std::placeholders::_3)});
 
     m_msgHandlerMap.insert(
-    {E_MSG_TYPE::ADD_FRIEND_REQ, std::bind(&Service::AddFriendReq,
-    this,  std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
+        {E_MSG_TYPE::ADD_FRIEND_REQ,
+         std::bind(&Service::AddFriendReq, this, std::placeholders::_1,
+                   std::placeholders::_2, std::placeholders::_3)});
 
     m_msgHandlerMap.insert(
-    {E_MSG_TYPE::ADD_FRIEND_ACK_AGREE, std::bind(&Service::AddFriendAckAgree,
-    this,  std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
+        {E_MSG_TYPE::ADD_FRIEND_ACK_AGREE,
+         std::bind(&Service::AddFriendAckAgree, this, std::placeholders::_1,
+                   std::placeholders::_2, std::placeholders::_3)});
 
-    m_msgHandlerMap.insert({ONE_CHAT_MSG, std::bind(&Service::oneChat, 
-    this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3)});
+    m_msgHandlerMap.insert(
+        {ONE_CHAT_MSG,
+         std::bind(&Service::oneChat, this, std::placeholders::_1,
+                   std::placeholders::_2, std::placeholders::_3)});
 }
 
 MsgHandler Service::GetHandler(int msgType) {
     auto it = m_msgHandlerMap.find(msgType);
     if (it == m_msgHandlerMap.end()) {
-        return [=](const muduo::net::TcpConnectionPtr &conn, 
-            nlohmann::json &js, muduo::Timestamp time){
-                LOG_ERROR << "msgType:" << msgType << "can not find handler!";
-            };
-    } 
+        return [=](const muduo::net::TcpConnectionPtr &conn, nlohmann::json &js,
+                   muduo::Timestamp time) {
+            LOG_ERROR << "msgType:" << msgType << "can not find handler!";
+        };
+    }
     return it->second;
-    
 }
 
 void Service::ClientCloseException(const muduo::net::TcpConnectionPtr &conn) {
@@ -68,8 +72,8 @@ void Service::ClientCloseException(const muduo::net::TcpConnectionPtr &conn) {
     }
 }
 
-void Service::Login(const muduo::net::TcpConnectionPtr &conn, 
-    nlohmann::json &js, muduo::Timestamp time) {
+void Service::Login(const muduo::net::TcpConnectionPtr &conn,
+                    nlohmann::json &js, muduo::Timestamp time) {
     std::unordered_map<std::string, std::string> data = js["data"];
 
     // 这里应该根据客户端传过来的用户名，或者账号，或者手机号来进行登录
@@ -93,6 +97,13 @@ void Service::Login(const muduo::net::TcpConnectionPtr &conn,
         response["data"]["username"] = user.GetUserName();
         response["data"]["phone"] = user.GetUserPhone();
         response["data"]["avator"] = user.GetUserAvatar();
+
+        // 查询该用户是否有离线消息
+        vector<string> vec = m_offlineMsgModel.Query(user.GetUserId());
+        if (!vec.empty()) {
+            response["offlinemsg"] = vec;
+            m_offlineMsgModel.Remove(user.GetUserId());
+        }
     } else {
         LOG_INFO << "login failed!!!!";
         response["msgtype"] = LOGIN_MSG_ACK_FAIL;
@@ -100,8 +111,8 @@ void Service::Login(const muduo::net::TcpConnectionPtr &conn,
     conn->send(response.dump());
 }
 
-void Service::Register(const muduo::net::TcpConnectionPtr &conn, 
-    nlohmann::json &js, muduo::Timestamp time) {
+void Service::Register(const muduo::net::TcpConnectionPtr &conn,
+                       nlohmann::json &js, muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
 
     User user;
@@ -132,26 +143,27 @@ void Service::Register(const muduo::net::TcpConnectionPtr &conn,
     conn->send(response.dump());
 }
 
-void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr &conn, 
-    nlohmann::json &js, muduo::Timestamp time) {
+void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr &conn,
+                            nlohmann::json &js, muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
-    std::vector<std::string> resVec = m_userModel.QueryUserInfo(data["username"]);
+    std::vector<std::string> resVec =
+        m_userModel.QueryUserInfo(data["username"]);
     if (!resVec.empty()) {
         response["msgtype"] = GET_FRIEND_INFO_SUCCESS;
         response["data"]["userid"] = resVec[0];
         response["data"]["username"] = resVec[2];
         response["data"]["phone"] = resVec[1];
         // conn->send(response.dump());
-    } else{
+    } else {
         response["msgtype"] = GET_FRIEND_INFO_FAILED;
         LOG_INFO << "获取朋友失败";
     }
     conn->send(response.dump());
 }
 
-void Service::AddFriendReq(const muduo::net::TcpConnectionPtr &conn, 
-    nlohmann::json &js, muduo::Timestamp time) {
+void Service::AddFriendReq(const muduo::net::TcpConnectionPtr &conn,
+                           nlohmann::json &js, muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
     int userid = stoi(data["userid"]);
@@ -167,18 +179,17 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr &conn,
 
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
-        if (m_userConnMap.find(friendid) != m_userConnMap.end()) {     
+        if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
             m_userConnMap[friendid]->send(response.dump());
         } else {
             // 用户离线
         }
     }
-    
 }
 
-void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn, 
-                nlohmann::json &js, muduo::Timestamp time) {
-                    std::map<std::string, std::string> data = js["data"];
+void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn,
+                                nlohmann::json &js, muduo::Timestamp time) {
+    std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
     int userid = stoi(data["userid"]);
     std::string username = data["username"];
@@ -190,11 +201,13 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn,
     response["data"]["receiverid"] = friendid;
     response["data"]["receivername"] = friendname;
     response["msgtype"] = ADD_FRIEND_ACK_AGREE;
-    LOG_INFO << "Service::AddFriendAckAgree: userid" << userid << " username: " << username << " friendid: " << friendid << " friendname: " << friendname;
+    LOG_INFO << "Service::AddFriendAckAgree: userid" << userid
+             << " username: " << username << " friendid: " << friendid
+             << " friendname: " << friendname;
 
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
-        if (m_userConnMap.find(friendid) != m_userConnMap.end()) {     
+        if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
             m_userConnMap[friendid]->send(response.dump());
         } else {
             // 用户离线
@@ -202,11 +215,11 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn,
     }
 }
 
-void Service::oneChat(const muduo::net::TcpConnectionPtr &conn, 
-                nlohmann::json &js, muduo::Timestamp time) {
+void Service::oneChat(const muduo::net::TcpConnectionPtr &conn,
+                      nlohmann::json &js, muduo::Timestamp time) {
 
     std::map<std::string, std::string> data = js["data"];
-    
+
     uint64_t receiverid = stol(data["receiverId"]);
     LOG_INFO << "Service::oneChat userid: " << receiverid;
     {
@@ -217,5 +230,5 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr &conn,
             return;
         }
     }
-
+    m_offlineMsgModel.Insert(receiverid, js.dump());
 }
