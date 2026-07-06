@@ -209,6 +209,8 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr &conn,
         std::lock_guard<std::mutex> locker(m_connMtx);
         if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
             m_userConnMap[friendid]->send(response.dump());
+            m_friendModel.Insert(userid, friendid);
+            m_friendModel.Insert(friendid, userid);
         } else {
             // 用户离线
         }

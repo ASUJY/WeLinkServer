@@ -5,6 +5,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "friendmodel.h"
 #include "json.hpp"
 #include "offlinemessagemodel.h"
 #include "usermodel.h"
@@ -45,6 +46,7 @@ class Service {
     // 数据操作类对象
     UserModel m_userModel;
     OfflineMsgModel m_offlineMsgModel;
+    FriendModel m_friendModel;
 };
 
 #endif
