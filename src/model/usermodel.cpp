@@ -1,13 +1,15 @@
 #include "usermodel.h"
-#include "mysqldb.h"
+
 #include <iostream>
 
-bool UserModel::Insert(User &user) {
+#include "mysqldb.h"
+
+bool UserModel::Insert(User& user) {
     char sql[1024] = {0};
-    sprintf(
-        sql, "insert into im_user(uid, nickname, password, phone) values(%lld, '%s', '%s', '%s')",
-        user.GetUserId(), user.GetUserName().c_str(), user.GetPwd().c_str(), user.GetUserPhone().c_str()
-    );
+    sprintf(sql,
+            "insert into im_user(uid, nickname, password, phone) values(%lld, '%s', '%s', '%s')",
+            user.GetUserId(), user.GetUserName().c_str(), user.GetPwd().c_str(),
+            user.GetUserPhone().c_str());
 
     MySqlDB mysql;
     if (mysql.Connect()) {
@@ -19,7 +21,7 @@ bool UserModel::Insert(User &user) {
     return false;
 }
 
-bool UserModel::Query(User &user) {
+bool UserModel::Query(User& user) {
     // 后续可以根据用户的账号，手机号，用户名进行登录
     // 组装sql语句
     char sql[1024] = {0};
@@ -27,7 +29,7 @@ bool UserModel::Query(User &user) {
 
     MySqlDB mysql;
     if (mysql.Connect()) {
-        MYSQL_RES *res = mysql.Query(sql);
+        MYSQL_RES* res = mysql.Query(sql);
         if (res != nullptr) {
             // 获取一行结果
             MYSQL_ROW row = mysql_fetch_row(res);
@@ -54,7 +56,7 @@ std::vector<std::string> UserModel::QueryUserInfo(std::string username) {
     std::vector<std::string> resVec;
     MySqlDB mysql;
     if (mysql.Connect()) {
-        MYSQL_RES *res = mysql.Query(sql);
+        MYSQL_RES* res = mysql.Query(sql);
         if (res != nullptr) {
             // 获取一行结果
             MYSQL_ROW row = mysql_fetch_row(res);

@@ -1,12 +1,12 @@
 #include "offlinemessagemodel.h"
+
 #include "mysqldb.h"
 
 // 存储用户的离线消息
 void OfflineMsgModel::Insert(uint64_t userid, string msg) {
     // 组装sql语句
     char sql[1024] = {0};
-    sprintf(sql, "insert into offlinemessage values(%ld, '%s')", userid,
-            msg.c_str());
+    sprintf(sql, "insert into offlinemessage values(%ld, '%s')", userid, msg.c_str());
 
     MySqlDB mysql;
     if (mysql.Connect()) {
@@ -35,7 +35,7 @@ vector<string> OfflineMsgModel::Query(uint64_t userid) {
     vector<string> vec;
     MySqlDB mysql;
     if (mysql.Connect()) {
-        MYSQL_RES *res = mysql.Query(sql);
+        MYSQL_RES* res = mysql.Query(sql);
         if (res != nullptr) {
             // 把userid用户的所有离线消息放入vec中返回
             MYSQL_ROW row;

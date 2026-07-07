@@ -1,18 +1,18 @@
 #include "mysqldb.h"
-#include <string>
+
 #include <muduo/base/Logging.h>
+
+#include <string>
 
 using namespace std;
 
 // 数据库配置信息
-static string server = "127.0.0.1";
-static string user = "root";
+static string server   = "127.0.0.1";
+static string user     = "root";
 static string password = "root";
-static string dbname = "im_db";
+static string dbname   = "im_db";
 
-MySqlDB::MySqlDB() {
-    m_conn = mysql_init(nullptr);
-}
+MySqlDB::MySqlDB() { m_conn = mysql_init(nullptr); }
 
 MySqlDB::~MySqlDB() {
     // 有没有更好的方法？如何防止数据库句柄泄漏
@@ -22,7 +22,8 @@ MySqlDB::~MySqlDB() {
 }
 
 bool MySqlDB::Connect() {
-    MYSQL *p = mysql_real_connect(m_conn, server.c_str(), user.c_str(), password.c_str(), dbname.c_str(), 3306, nullptr, 0);
+    MYSQL* p = mysql_real_connect(m_conn, server.c_str(), user.c_str(), password.c_str(),
+                                  dbname.c_str(), 3306, nullptr, 0);
 
     if (p != nullptr) {
         // C和C++代码默认的编码字符是ASCII，如果不设置，从MySQL上拉下来的中文显示会乱码

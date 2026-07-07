@@ -1,4 +1,5 @@
 #include "friendmodel.h"
+
 #include "mysqldb.h"
 
 // 添加好友关系
@@ -17,16 +18,15 @@ void FriendModel::Insert(int userid, int friendid) {
 vector<User> FriendModel::Query(int userid) {
     // 组装sql语句
     char sql[1024] = {0};
-    sprintf(
-        sql,
-        "select a.id,a.name,a.state from im_user a inner join im_friend b on "
-        "b.friendid = a.id where b.userid = %d",
-        userid);
+    sprintf(sql,
+            "select a.id,a.name,a.state from im_user a inner join im_friend b on "
+            "b.friendid = a.id where b.userid = %d",
+            userid);
 
     vector<User> vec;
     MySqlDB mysql;
     if (mysql.Connect()) {
-        MYSQL_RES *res = mysql.Query(sql);
+        MYSQL_RES* res = mysql.Query(sql);
         if (res != nullptr) {
             // 把userid用户的所有离线消息放入vec中返回
             MYSQL_ROW row;

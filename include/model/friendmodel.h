@@ -1,13 +1,14 @@
 #ifndef FRIENDMODEL_H
 #define FRIENDMODEL_H
 
-#include "user.hpp"
 #include <vector>
+
+#include "user.hpp"
 using namespace std;
 
 // 维护好友信息的操作接口方法
 class FriendModel {
-  public:
+public:
     // 添加好友关系
     void Insert(int userid, int friendid);
 
