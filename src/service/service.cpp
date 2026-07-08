@@ -42,6 +42,12 @@ Service::Service() {
 
     m_msgHandlerMap.insert({ONE_CHAT_MSG, std::bind(&Service::oneChat, this, std::placeholders::_1,
                                                     std::placeholders::_2, std::placeholders::_3)});
+
+    if (m_redis.Connect()) {
+        // 设置redis的回调函数(redis队列中如果有被订阅的channel的信息，就会调用这个回调函数)
+        m_redis.InitNotifyHandler(std::bind(&Service::HandleRedisSubscribeMessage, this,
+                                            std::placeholders::_1, std::placeholders::_2));
+    }
 }
 
 MsgHandler Service::GetHandler(int msgType) {
@@ -56,15 +62,24 @@ MsgHandler Service::GetHandler(int msgType) {
 }
 
 void Service::ClientCloseException(const muduo::net::TcpConnectionPtr& conn) {
+    uint64_t id = 0;
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
         for (auto it = m_userConnMap.begin(); it != m_userConnMap.end(); ++it) {
             if (it->second == conn) {
                 LOG_ERROR << "连接发送错误，断开";
+                id = it->first;
                 m_userConnMap.erase(it);
                 break;
             }
         }
+    }
+    // 用户注销，相当于就是下线，在redis中取消订阅通道
+    m_redis.Unsubscribe(id);
+
+    // 更新用户的状态信息
+    if (id != -1) {
+        m_userChangeModel.UpdateState(id, "offline");
     }
 }
 
@@ -77,28 +92,54 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
     user.SetUserName(data["username"]);
     user.SetPwd(data["password"]);
 
-    bool success = m_userModel.Query(user);
+    bool res1 = m_userModel.Query(user);
     nlohmann::json response;
 
-    if (success) {
-        {
-            std::lock_guard<std::mutex> locker(m_connMtx);
-            m_userConnMap.insert({user.GetUserId(), conn});
-        }
+    if (res1) {
+        if (user.GetPwd() == data["password"]) {
+            auto state = m_userChangeModel.QueryState(user.GetUserId());
+            if (state.empty()) {
+                response["msgtype"] = LOGIN_MSG_ACK_FAIL;
+            } else if (state == "online") {
+                // 该用户已经登录，不允许重复登录
+                response["msgid"]  = LOGIN_MSG_ACK_FAIL;
+                response["errno"]  = 2;
+                response["errmsg"] = "该账号已经登录，请重新输入新账号";
+            } else {
+                // 登录成功，记录用户连接信息
+                {
+                    std::lock_guard<std::mutex> locker(m_connMtx);
+                    m_userConnMap.insert({user.GetUserId(), conn});
+                }
 
-        LOG_INFO << "login success!!!!";
-        response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
-        LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
-        response["data"]["userid"]   = user.GetUserId();
-        response["data"]["username"] = user.GetUserName();
-        response["data"]["phone"]    = user.GetUserPhone();
-        response["data"]["avator"]   = user.GetUserAvatar();
+                // id用户登录成功后，向redis订阅channel(id)
+                m_redis.Subscribe(user.GetUserId());
 
-        // 查询该用户是否有离线消息
-        vector<string> vec = m_offlineMsgModel.Query(user.GetUserId());
-        if (!vec.empty()) {
-            response["offlinemsg"] = vec;
-            m_offlineMsgModel.Remove(user.GetUserId());
+                // 登录成功，更新用户状态信息 state offline=>online
+                user.SetUserState("online");
+                m_userChangeModel.UpdateState(user);
+
+                LOG_INFO << "login success!!!!";
+                response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
+                LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
+                response["data"]["userid"]   = user.GetUserId();
+                response["data"]["username"] = user.GetUserName();
+                response["data"]["phone"]    = user.GetUserPhone();
+                response["data"]["avator"]   = user.GetUserAvatar();
+
+                // 查询该用户是否有离线消息
+                vector<string> vec = m_offlineMsgModel.Query(user.GetUserId());
+                if (!vec.empty()) {
+                    response["offlinemsg"] = vec;
+                    m_offlineMsgModel.Remove(user.GetUserId());
+                }
+
+                // 查询该用户的好友信息并返回，这里可以优化一下，看看是否能获取用户登录设备的信息
+                // 如果是常用登录设备就不需要返回好友信息了
+            }
+        } else {
+            LOG_INFO << "login failed!!!!";
+            response["msgtype"] = LOGIN_MSG_ACK_FAIL;
         }
     } else {
         LOG_INFO << "login failed!!!!";
@@ -123,6 +164,7 @@ void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json&
     user.SetUserId(gen.NextId());
 
     bool state = m_userModel.Insert(user);
+    m_userChangeModel.Insert(user);
     nlohmann::json response;
     if (state) {
         // register success
@@ -177,6 +219,13 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
         if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
             m_userConnMap[friendid]->send(response.dump());
         } else {
+            // 查询用户是否在线
+            auto state = m_userChangeModel.QueryState(friendid);
+            if (state == "online") {
+                m_redis.Publish(friendid, response.dump());
+                return;
+            }
+
             // 用户离线
         }
     }
@@ -206,6 +255,15 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr& conn, nlohma
             m_friendModel.Insert(userid, friendid);
             m_friendModel.Insert(friendid, userid);
         } else {
+            // 查询用户是否在线
+            auto state = m_userChangeModel.QueryState(friendid);
+            if (state == "online") {
+                m_friendModel.Insert(userid, friendid);
+                m_friendModel.Insert(friendid, userid);
+                m_redis.Publish(friendid, response.dump());
+                return;
+            }
+
             // 用户离线
         }
     }
@@ -225,5 +283,25 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
             return;
         }
     }
+
+    // 查询toid是否在线
+    auto state = m_userChangeModel.QueryState(receiverid);
+    if (state == "online") {
+        m_redis.Publish(receiverid, js.dump());
+        return;
+    }
+
     m_offlineMsgModel.Insert(receiverid, js.dump());
+}
+
+void Service::HandleRedisSubscribeMessage(uint64_t userid, const std::string& msg) {
+    {
+        std::lock_guard<mutex> lock(m_connMtx);
+        auto it = m_userConnMap.find(userid);
+        if (it != m_userConnMap.end()) {
+            it->second->send(msg);
+            return;
+        }
+    }
+    m_offlineMsgModel.Insert(userid, msg);
 }

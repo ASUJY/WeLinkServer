@@ -13,6 +13,7 @@ include_directories(${PROJECT_SOURCE_DIR}/include/network)
 include_directories(${PROJECT_SOURCE_DIR}/include/service)
 include_directories(${PROJECT_SOURCE_DIR}/include/model)
 include_directories(${PROJECT_SOURCE_DIR}/include/db)
+include_directories(${PROJECT_SOURCE_DIR}/include/redis)
 include_directories(${PROJECT_SOURCE_DIR}/thirdparty)
 
 
