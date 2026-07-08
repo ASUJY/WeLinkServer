@@ -30,13 +30,7 @@ public:
     // 设置回调
     void InitNotifyHandler(std::function<void(uint64_t, const std::string&)> fn);
 
-private:
-    // 工作线程主循环：处理订阅命令和接收消息
-    void ProcessSubscription();
-    // 停止工作线程（设置停止标志并等待线程退出）
-    void StopWorker();
-    // 推送一个任务到工作线程队列
-    void PushTask(std::function<void()> task);
+    void ObserverChannelMessage();
 
 private:
     redisContext* m_publishContext   = nullptr;  // 发布上下文（仅主线程使用）
