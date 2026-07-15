@@ -48,6 +48,6 @@ void Server::OnMessage(const muduo::net::TcpConnectionPtr& conn, muduo::net::Buf
         return;
     }
 
-    auto msgHandler = Service::instance()->GetHandler(js["msgtype"].get<E_MSG_TYPE>());
+    auto msgHandler = Service::instance()->GetHandler(js["msgtype"].get<int>());
     msgHandler(conn, js, time);
 }

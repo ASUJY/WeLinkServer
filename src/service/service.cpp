@@ -40,8 +40,9 @@ Service::Service() {
                             std::bind(&Service::AddFriendAckAgree, this, std::placeholders::_1,
                                       std::placeholders::_2, std::placeholders::_3)});
 
-    m_msgHandlerMap.insert({ONE_CHAT_MSG, std::bind(&Service::oneChat, this, std::placeholders::_1,
-                                                    std::placeholders::_2, std::placeholders::_3)});
+    m_msgHandlerMap.insert(
+        {E_MSG_TYPE::ONE_CHAT_MSG, std::bind(&Service::oneChat, this, std::placeholders::_1,
+                                             std::placeholders::_2, std::placeholders::_3)});
 
     if (m_redis.Connect()) {
         // 设置redis的回调函数(redis队列中如果有被订阅的channel的信息，就会调用这个回调函数)
@@ -51,7 +52,7 @@ Service::Service() {
 }
 
 MsgHandler Service::GetHandler(int msgType) {
-    auto it = m_msgHandlerMap.find(msgType);
+    auto it = m_msgHandlerMap.find(static_cast<E_MSG_TYPE>(msgType));
     if (it == m_msgHandlerMap.end()) {
         return [=](const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                    muduo::Timestamp time) {
@@ -99,10 +100,10 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
         if (user.GetPwd() == data["password"]) {
             auto state = m_userChangeModel.QueryState(user.GetUserId());
             if (state.empty()) {
-                response["msgtype"] = LOGIN_MSG_ACK_FAIL;
+                response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
             } else if (state == "online") {
                 // 该用户已经登录，不允许重复登录
-                response["msgid"]  = LOGIN_MSG_ACK_FAIL;
+                response["msgid"]  = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
                 response["errno"]  = 2;
                 response["errmsg"] = "该账号已经登录，请重新输入新账号";
             } else {
@@ -120,7 +121,7 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
                 m_userChangeModel.UpdateState(user);
 
                 LOG_INFO << "login success!!!!";
-                response["msgtype"] = LOGIN_MSG_ACK_SUCCESS;
+                response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_SUCCESS;
                 LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
                 response["data"]["userid"]   = user.GetUserId();
                 response["data"]["username"] = user.GetUserName();
@@ -139,11 +140,11 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
             }
         } else {
             LOG_INFO << "login failed!!!!";
-            response["msgtype"] = LOGIN_MSG_ACK_FAIL;
+            response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
         }
     } else {
         LOG_INFO << "login failed!!!!";
-        response["msgtype"] = LOGIN_MSG_ACK_FAIL;
+        response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
     }
     conn->send(response.dump());
 }
@@ -169,14 +170,16 @@ void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json&
     if (state) {
         // register success
         LOG_INFO << "register success!!!!";
-        response["msgtype"]          = REG_MSG_ACK_SUCCESS;
+        response["msgtype"]          = E_MSG_TYPE::REG_MSG_ACK;
+        response["data"]["errtype"]  = E_ERR_TYPE::REG_MSG_ACK_SUCCESS;
         response["data"]["userid"]   = user.GetUserId();
         response["data"]["username"] = user.GetUserName();
         response["data"]["phone"]    = user.GetUserPhone();
         response["data"]["avator"]   = user.GetUserAvatar();
     } else {
         // register failed
-        response["msgtype"] = REG_MSG_ACK_FAIL;
+        response["msgtype"]         = E_MSG_TYPE::REG_MSG_ACK;
+        response["data"]["errtype"] = E_ERR_TYPE::USER_EXIT;
     }
     conn->send(response.dump());
 }
@@ -187,13 +190,13 @@ void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr& conn, nlohmann::
     nlohmann::json response;
     std::vector<std::string> resVec = m_userModel.QueryUserInfo(data["username"]);
     if (!resVec.empty()) {
-        response["msgtype"]          = GET_FRIEND_INFO_SUCCESS;
+        response["msgtype"]          = E_MSG_TYPE::GET_FRIEND_INFO_SUCCESS;
         response["data"]["userid"]   = resVec[0];
         response["data"]["username"] = resVec[2];
         response["data"]["phone"]    = resVec[1];
         // conn->send(response.dump());
     } else {
-        response["msgtype"] = GET_FRIEND_INFO_FAILED;
+        response["msgtype"] = E_MSG_TYPE::GET_FRIEND_INFO_FAILED;
         LOG_INFO << "获取朋友失败";
     }
     conn->send(response.dump());
@@ -212,7 +215,7 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
     response["data"]["sendername"]   = username;
     response["data"]["receiverid"]   = friendid;
     response["data"]["receivername"] = friendname;
-    response["msgtype"]              = ADD_FRIEND_REQ;
+    response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_REQ;
 
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
@@ -244,7 +247,7 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr& conn, nlohma
     response["data"]["sendername"]   = username;
     response["data"]["receiverid"]   = friendid;
     response["data"]["receivername"] = friendname;
-    response["msgtype"]              = ADD_FRIEND_ACK_AGREE;
+    response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_ACK_AGREE;
     LOG_INFO << "Service::AddFriendAckAgree: userid" << userid << " username: " << username
              << " friendid: " << friendid << " friendname: " << friendname;
 

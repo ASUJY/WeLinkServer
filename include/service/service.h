@@ -6,6 +6,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "common.h"
 #include "friendmodel.h"
 #include "json.hpp"
 #include "offlinemessagemodel.h"
@@ -41,7 +42,7 @@ private:
     Service();  // 构造函数私有化，禁止外部创建
 
 private:
-    std::unordered_map<int, MsgHandler> m_msgHandlerMap;
+    std::unordered_map<E_MSG_TYPE, MsgHandler> m_msgHandlerMap;
     std::unordered_map<int, muduo::net::TcpConnectionPtr> m_userConnMap;
 
     std::mutex m_connMtx;
