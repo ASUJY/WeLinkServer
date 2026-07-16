@@ -193,7 +193,8 @@ void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr& conn, nlohmann::
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
     response["msgtype"]             = E_MSG_TYPE::GET_FRIEND_INFO_ACK;
-    std::vector<std::string> resVec = m_userModel.QueryUserInfo(data["username"]);
+    std::vector<std::string> resVec = m_userModel.QueryUserInfo(
+        data["username"], static_cast<E_ACCOUNT_TYPE>(stoi(data["accountType"])));
     if (!resVec.empty()) {
         response["data"]["userid"]   = resVec[0];
         response["data"]["username"] = resVec[2];

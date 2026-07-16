@@ -55,9 +55,17 @@ bool UserModel::QueryAccount(User& user, E_ACCOUNT_TYPE type) {
     return false;
 }
 
-std::vector<std::string> UserModel::QueryUserInfo(std::string username) {
+std::vector<std::string> UserModel::QueryUserInfo(std::string username, E_ACCOUNT_TYPE type) {
     char sql[1024] = {0};
-    sprintf(sql, "select * from im_user where nickname = '%s'", username.c_str());
+
+    if (type == E_ACCOUNT_TYPE::NICKNAME) {
+        sprintf(sql, "select * from im_user where nickname = '%s'", username.c_str());
+        std::cout << "QueryAccount: 用户名" << std::endl;
+    } else if (type == E_ACCOUNT_TYPE::PHONE) {
+        sprintf(sql, "select * from im_user where phone = '%s'", username.c_str());
+        std::cout << "QueryAccount: 手机号" << std::endl;
+    }
+
     std::cout << "sql: " << sql << std::endl;
     std::vector<std::string> resVec;
     MySqlDB mysql;
