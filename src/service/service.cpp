@@ -96,18 +96,19 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
 
     bool res1 =
         m_userModel.QueryAccount(user, static_cast<E_ACCOUNT_TYPE>(stoi(data["accountType"])));
-    nlohmann::json response;
 
+    nlohmann::json response;
+    response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK;
     if (res1) {
         if (user.GetPwd() == data["password"]) {
             auto state = m_userChangeModel.QueryState(user.GetUserId());
             if (state.empty()) {
-                response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
+                response["data"]["errtype"] = E_ERR_TYPE::USER_NO_REGISTER;
             } else if (state == "online") {
                 // 该用户已经登录，不允许重复登录
-                response["msgid"]  = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
-                response["errno"]  = 2;
-                response["errmsg"] = "该账号已经登录，请重新输入新账号";
+                response["data"]["errtype"] = E_ERR_TYPE::USER_ONLINE;
+                // response["errno"]   = 2;
+                // response["errmsg"]  = "该账号已经登录，请重新输入新账号";
             } else {
                 // 登录成功，记录用户连接信息
                 {
@@ -123,7 +124,7 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
                 m_userChangeModel.UpdateState(user);
 
                 LOG_INFO << "login success!!!!";
-                response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_SUCCESS;
+                response["data"]["errtype"] = E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS;
                 LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
                 response["data"]["userid"]   = user.GetUserId();
                 response["data"]["username"] = user.GetUserName();
@@ -142,11 +143,12 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
             }
         } else {
             LOG_INFO << "login failed!!!!";
-            response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
+            response["data"]["errtype"] = E_ERR_TYPE::ACCOUNT_ERROR;
         }
     } else {
         LOG_INFO << "login failed!!!!";
-        response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK_FAIL;
+
+        response["data"]["errtype"] = E_ERR_TYPE::USER_NO_REGISTER;
     }
     conn->send(response.dump());
 }

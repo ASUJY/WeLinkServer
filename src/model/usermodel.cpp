@@ -27,8 +27,10 @@ bool UserModel::QueryAccount(User& user, E_ACCOUNT_TYPE type) {
     char sql[1024] = {0};
     if (type == E_ACCOUNT_TYPE::NICKNAME) {
         sprintf(sql, "select * from im_user where nickname = '%s'", user.GetUserName().c_str());
+        std::cout << "QueryAccount: 用户名" << std::endl;
     } else if (type == E_ACCOUNT_TYPE::PHONE) {
         sprintf(sql, "select * from im_user where phone = '%s'", user.GetUserName().c_str());
+        std::cout << "QueryAccount: 手机号" << std::endl;
     }
 
     MySqlDB mysql;
@@ -38,14 +40,14 @@ bool UserModel::QueryAccount(User& user, E_ACCOUNT_TYPE type) {
             // 获取一行结果
             MYSQL_ROW row = mysql_fetch_row(res);
             if (row != nullptr) {
-                std::string passwd = row[3];
-                if (passwd == user.GetPwd()) {
-                    user.SetUserName(row[3]);
-                    user.SetUserId(atoi(row[0]));
-                    user.SetUserPhone(row[2]);
-                    mysql_free_result(res);
-                    return true;
-                }
+                user.SetPwd(row[5]);
+                // if (passwd == user.GetPwd()) {
+                user.SetUserName(row[3]);
+                user.SetUserId(atoi(row[0]));
+                user.SetUserPhone(row[2]);
+                mysql_free_result(res);
+                return true;
+                // }
             }
         }
         mysql_free_result(res);
