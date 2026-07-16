@@ -192,15 +192,15 @@ void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr& conn, nlohmann::
                             muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
+    response["msgtype"]             = E_MSG_TYPE::GET_FRIEND_INFO_ACK;
     std::vector<std::string> resVec = m_userModel.QueryUserInfo(data["username"]);
     if (!resVec.empty()) {
-        response["msgtype"]          = E_MSG_TYPE::GET_FRIEND_INFO_SUCCESS;
         response["data"]["userid"]   = resVec[0];
         response["data"]["username"] = resVec[2];
         response["data"]["phone"]    = resVec[1];
-        // conn->send(response.dump());
+        response["data"]["errtype"]  = E_ERR_TYPE::GET_FRIEND_INFO_SUCCESS;
     } else {
-        response["msgtype"] = E_MSG_TYPE::GET_FRIEND_INFO_FAILED;
+        response["data"]["errtype"] = E_ERR_TYPE::GET_FRIEND_INFO_FAILED;
         LOG_INFO << "获取朋友失败";
     }
     conn->send(response.dump());
