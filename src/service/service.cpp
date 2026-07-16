@@ -3,6 +3,7 @@
 #include <muduo/base/Logging.h>
 
 #include <iostream>
+#include <string>
 
 #include "common.h"
 #include "snowflake.h"
@@ -87,13 +88,14 @@ void Service::ClientCloseException(const muduo::net::TcpConnectionPtr& conn) {
 void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                     muduo::Timestamp time) {
     std::unordered_map<std::string, std::string> data = js["data"];
-
+    std::cout << "Login: " << std::endl;
     // 这里应该根据客户端传过来的用户名，或者账号，或者手机号来进行登录
     User user;
     user.SetUserName(data["username"]);
     user.SetPwd(data["password"]);
 
-    bool res1 = m_userModel.Query(user);
+    bool res1 =
+        m_userModel.QueryAccount(user, static_cast<E_ACCOUNT_TYPE>(stoi(data["accountType"])));
     nlohmann::json response;
 
     if (res1) {

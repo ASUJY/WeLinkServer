@@ -21,11 +21,15 @@ bool UserModel::Insert(User& user) {
     return false;
 }
 
-bool UserModel::Query(User& user) {
+bool UserModel::QueryAccount(User& user, E_ACCOUNT_TYPE type) {
     // 后续可以根据用户的账号，手机号，用户名进行登录
     // 组装sql语句
     char sql[1024] = {0};
-    sprintf(sql, "select * from im_user where nickname = '%s'", user.GetUserName().c_str());
+    if (type == E_ACCOUNT_TYPE::NICKNAME) {
+        sprintf(sql, "select * from im_user where nickname = '%s'", user.GetUserName().c_str());
+    } else if (type == E_ACCOUNT_TYPE::PHONE) {
+        sprintf(sql, "select * from im_user where phone = '%s'", user.GetUserName().c_str());
+    }
 
     MySqlDB mysql;
     if (mysql.Connect()) {

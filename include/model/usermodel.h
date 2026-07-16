@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "common.h"
 #include "user.hpp"
 
 // User表的数据操作类
@@ -12,7 +13,7 @@ public:
     bool Insert(User& user);
 
     // 查询用户信息
-    bool Query(User& user);
+    bool QueryAccount(User& user, E_ACCOUNT_TYPE type);
 
     std::vector<std::string> QueryUserInfo(std::string username);
 };
