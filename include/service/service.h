@@ -31,8 +31,8 @@ public:
                        muduo::Timestamp time);
     void AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                       muduo::Timestamp time);
-    void AddFriendAckAgree(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
-                           muduo::Timestamp time);
+    void AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
+                      muduo::Timestamp time);
     void oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                  muduo::Timestamp time);
 

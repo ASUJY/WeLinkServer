@@ -37,9 +37,9 @@ Service::Service() {
         {E_MSG_TYPE::ADD_FRIEND_REQ, std::bind(&Service::AddFriendReq, this, std::placeholders::_1,
                                                std::placeholders::_2, std::placeholders::_3)});
 
-    m_msgHandlerMap.insert({E_MSG_TYPE::ADD_FRIEND_ACK_AGREE,
-                            std::bind(&Service::AddFriendAckAgree, this, std::placeholders::_1,
-                                      std::placeholders::_2, std::placeholders::_3)});
+    m_msgHandlerMap.insert(
+        {E_MSG_TYPE::ADD_FRIEND_ACK, std::bind(&Service::AddFriendAck, this, std::placeholders::_1,
+                                               std::placeholders::_2, std::placeholders::_3)});
 
     m_msgHandlerMap.insert(
         {E_MSG_TYPE::ONE_CHAT_MSG, std::bind(&Service::oneChat, this, std::placeholders::_1,
@@ -239,8 +239,8 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
     }
 }
 
-void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
-                                muduo::Timestamp time) {
+void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
+                           muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
     int userid             = stoi(data["userid"]);
@@ -252,22 +252,27 @@ void Service::AddFriendAckAgree(const muduo::net::TcpConnectionPtr& conn, nlohma
     response["data"]["sendername"]   = username;
     response["data"]["receiverid"]   = friendid;
     response["data"]["receivername"] = friendname;
-    response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_ACK_AGREE;
+    response["data"]["ackType"]      = data["ackType"];
+    response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_ACK;
     LOG_INFO << "Service::AddFriendAckAgree: userid" << userid << " username: " << username
              << " friendid: " << friendid << " friendname: " << friendname;
 
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
         if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
+            if (static_cast<E_ACK_TYPE>(stoi(data["ackType"])) == E_ACK_TYPE::SUCCESS) {
+                m_friendModel.Insert(userid, friendid);
+                m_friendModel.Insert(friendid, userid);
+            }
             m_userConnMap[friendid]->send(response.dump());
-            m_friendModel.Insert(userid, friendid);
-            m_friendModel.Insert(friendid, userid);
         } else {
             // 查询用户是否在线
             auto state = m_userChangeModel.QueryState(friendid);
             if (state == "online") {
-                m_friendModel.Insert(userid, friendid);
-                m_friendModel.Insert(friendid, userid);
+                if (static_cast<E_ACK_TYPE>(stoi(data["ackType"])) == E_ACK_TYPE::SUCCESS) {
+                    m_friendModel.Insert(userid, friendid);
+                    m_friendModel.Insert(friendid, userid);
+                }
                 m_redis.Publish(friendid, response.dump());
                 return;
             }
