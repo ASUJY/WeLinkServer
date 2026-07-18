@@ -6,7 +6,7 @@
 void FriendModel::Insert(int64_t userid, int64_t friendid) {
     // 组装sql语句
     char sql[1024] = {0};
-    sprintf(sql, "insert into im_friend values(%d, %d)", userid, friendid);
+    sprintf(sql, "insert into im_friend values(%ld, %ld)", userid, friendid);
 
     MySqlDB mysql;
     if (mysql.Connect()) {
@@ -20,7 +20,7 @@ vector<User> FriendModel::Query(int64_t userid) {
     char sql[1024] = {0};
     sprintf(sql,
             "select a.id,a.name,a.state from im_user a inner join im_friend b on "
-            "b.friendid = a.id where b.userid = %d",
+            "b.friendid = a.id where b.userid = %ld",
             userid);
 
     vector<User> vec;

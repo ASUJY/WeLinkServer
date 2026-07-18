@@ -4,7 +4,7 @@
 
 bool UserChangeModel::Insert(User& user) {
     char sql[1024] = {0};
-    sprintf(sql, "insert into im_userchange(userid, state) values(%lld, '%s')", user.GetUserId(),
+    sprintf(sql, "insert into im_userchange(userid, state) values(%ld, '%s')", user.GetUserId(),
             user.GetUserState().c_str());
 
     MySqlDB mysql;
