@@ -28,6 +28,6 @@ enum class E_ERR_TYPE : int {
 
 enum class E_ACCOUNT_TYPE : int { NICKNAME = 0, PHONE };
 
-enum class E_ACK_TYPE : int { SUCCESS = 0, FAILED };
+enum class FriendState : int { ACCEPT = 0, REJECT, DONE, PendingVerification, PendingApproval };
 
 #endif

@@ -255,12 +255,13 @@ void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
     response["data"]["ackType"]      = data["ackType"];
     response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_ACK;
     LOG_INFO << "Service::AddFriendAckAgree: userid" << userid << " username: " << username
-             << " friendid: " << friendid << " friendname: " << friendname;
+             << " friendid: " << friendid << " friendname: " << friendname
+             << "status: " << data["ackType"];
 
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
         if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
-            if (static_cast<E_ACK_TYPE>(stoi(data["ackType"])) == E_ACK_TYPE::SUCCESS) {
+            if (static_cast<FriendState>(stoi(data["ackType"])) == FriendState::ACCEPT) {
                 m_friendModel.Insert(userid, friendid);
                 m_friendModel.Insert(friendid, userid);
             }
@@ -269,7 +270,7 @@ void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
             // 查询用户是否在线
             auto state = m_userChangeModel.QueryState(friendid);
             if (state == "online") {
-                if (static_cast<E_ACK_TYPE>(stoi(data["ackType"])) == E_ACK_TYPE::SUCCESS) {
+                if (static_cast<FriendState>(stoi(data["ackType"])) == FriendState::ACCEPT) {
                     m_friendModel.Insert(userid, friendid);
                     m_friendModel.Insert(friendid, userid);
                 }
