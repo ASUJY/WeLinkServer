@@ -10,10 +10,10 @@ using namespace std;
 class FriendModel {
 public:
     // 添加好友关系
-    void Insert(int userid, int friendid);
+    void Insert(int64_t userid, int64_t friendid);
 
     // 返回用户好友列表
-    vector<User> Query(int userid);
+    vector<User> Query(int64_t userid);
 };
 
 #endif

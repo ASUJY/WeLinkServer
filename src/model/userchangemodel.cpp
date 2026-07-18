@@ -16,7 +16,7 @@ bool UserChangeModel::Insert(User& user) {
     return false;
 }
 
-std::string UserChangeModel::QueryState(uint64_t userid) {
+std::string UserChangeModel::QueryState(int64_t userid) {
     char sql[1024] = {0};
     sprintf(sql, "select state from im_userchange where userid = %ld", userid);
 
@@ -40,7 +40,7 @@ bool UserChangeModel::UpdateState(User& user) {
     return UpdateState(user.GetUserId(), user.GetUserState());
 }
 
-bool UserChangeModel::UpdateState(uint64_t userid, const std::string& state) {
+bool UserChangeModel::UpdateState(int64_t userid, const std::string& state) {
     char sql[1024] = {0};
     sprintf(sql, "update im_userchange set state = '%s' where userid = %ld", state.c_str(), userid);
 

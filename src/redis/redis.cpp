@@ -68,7 +68,7 @@ bool Redis::Connect() {
     return true;
 }
 
-bool Redis::Publish(uint64_t channel, const std::string& message) {
+bool Redis::Publish(int64_t channel, const std::string& message) {
     if (!m_publishContext) {
         LOG_ERROR << "publish context is null";
         return false;
@@ -90,7 +90,7 @@ bool Redis::Publish(uint64_t channel, const std::string& message) {
     return true;
 }
 
-bool Redis::Subscribe(uint64_t channel) {
+bool Redis::Subscribe(int64_t channel) {
     if (!m_subscribeContext) {
         LOG_ERROR << "subscribe context is null";
         return false;
@@ -112,7 +112,7 @@ bool Redis::Subscribe(uint64_t channel) {
     return true;
 }
 
-bool Redis::Unsubscribe(uint64_t channel) {
+bool Redis::Unsubscribe(int64_t channel) {
     if (!m_subscribeContext) {
         LOG_ERROR << "subscribe context is null";
         return false;
@@ -149,7 +149,7 @@ void Redis::ObserverChannelMessage() {
     LOG_ERROR << ">>>>>>>>>>>>> observer_channel_message quit <<<<<<<<<<<<<";
 }
 
-void Redis::InitNotifyHandler(std::function<void(uint64_t, const std::string&)> fn) {
+void Redis::InitNotifyHandler(std::function<void(int64_t, const std::string&)> fn) {
     std::lock_guard<std::mutex> lock(m_callbackMtx);
     this->m_notifyMessageHandler = fn;
 }

@@ -64,7 +64,7 @@ MsgHandler Service::GetHandler(int msgType) {
 }
 
 void Service::ClientCloseException(const muduo::net::TcpConnectionPtr& conn) {
-    uint64_t id = 0;
+    int64_t id = 0;
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
         for (auto it = m_userConnMap.begin(); it != m_userConnMap.end(); ++it) {
@@ -211,9 +211,9 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
                            muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
-    int userid             = stoi(data["userid"]);
+    int64_t userid         = stoll(data["userid"]);
     std::string username   = data["username"];
-    int friendid           = stoi(data["friendid"]);
+    int64_t friendid       = stoll(data["friendid"]);
     std::string friendname = data["friendname"];
 
     response["data"]["senderid"]     = userid;
@@ -243,9 +243,9 @@ void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
                            muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
-    int userid             = stoi(data["userid"]);
+    int64_t userid         = stoll(data["userid"]);
     std::string username   = data["username"];
-    int friendid           = stoi(data["friendid"]);
+    int64_t friendid       = stoll(data["friendid"]);
     std::string friendname = data["friendname"];
 
     response["data"]["senderid"]     = userid;
@@ -287,7 +287,7 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
                       muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
 
-    uint64_t receiverid = stol(data["receiverId"]);
+    int64_t receiverid = stoll(data["receiverId"]);
     LOG_INFO << "Service::oneChat userid: " << receiverid;
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
@@ -308,7 +308,7 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
     m_offlineMsgModel.Insert(receiverid, js.dump());
 }
 
-void Service::HandleRedisSubscribeMessage(uint64_t userid, const std::string& msg) {
+void Service::HandleRedisSubscribeMessage(int64_t userid, const std::string& msg) {
     {
         std::lock_guard<mutex> lock(m_connMtx);
         auto it = m_userConnMap.find(userid);

@@ -3,7 +3,7 @@
 #include "mysqldb.h"
 
 // 添加好友关系
-void FriendModel::Insert(int userid, int friendid) {
+void FriendModel::Insert(int64_t userid, int64_t friendid) {
     // 组装sql语句
     char sql[1024] = {0};
     sprintf(sql, "insert into im_friend values(%d, %d)", userid, friendid);
@@ -15,7 +15,7 @@ void FriendModel::Insert(int userid, int friendid) {
 }
 
 // 返回用户好友列表
-vector<User> FriendModel::Query(int userid) {
+vector<User> FriendModel::Query(int64_t userid) {
     // 组装sql语句
     char sql[1024] = {0};
     sprintf(sql,

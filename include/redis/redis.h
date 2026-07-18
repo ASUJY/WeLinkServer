@@ -22,13 +22,13 @@ public:
     // 连接redis服务器
     bool Connect();
     // 往redis消息队列发布消息
-    bool Publish(uint64_t channel, const std::string& message);
+    bool Publish(int64_t channel, const std::string& message);
     // 在redis消息队列中订阅消息
-    bool Subscribe(uint64_t channel);
-    bool Unsubscribe(uint64_t channel);
+    bool Subscribe(int64_t channel);
+    bool Unsubscribe(int64_t channel);
 
     // 设置回调
-    void InitNotifyHandler(std::function<void(uint64_t, const std::string&)> fn);
+    void InitNotifyHandler(std::function<void(int64_t, const std::string&)> fn);
 
     void ObserverChannelMessage();
 
@@ -43,7 +43,7 @@ private:
     std::queue<std::function<void()>> m_taskQueue;
 
     std::mutex m_callbackMtx;
-    std::function<void(uint64_t, std::string)> m_notifyMessageHandler;
+    std::function<void(int64_t, std::string)> m_notifyMessageHandler;
 };
 
 #endif

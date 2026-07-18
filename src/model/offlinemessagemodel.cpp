@@ -3,7 +3,7 @@
 #include "mysqldb.h"
 
 // 存储用户的离线消息
-void OfflineMsgModel::Insert(uint64_t userid, string msg) {
+void OfflineMsgModel::Insert(int64_t userid, string msg) {
     // 组装sql语句
     char sql[1024] = {0};
     sprintf(sql, "insert into offlinemessage values(%ld, '%s')", userid, msg.c_str());
@@ -15,7 +15,7 @@ void OfflineMsgModel::Insert(uint64_t userid, string msg) {
 }
 
 // 删除用户的离线消息
-void OfflineMsgModel::Remove(uint64_t userid) {
+void OfflineMsgModel::Remove(int64_t userid) {
     // 组装sql语句
     char sql[1024] = {0};
     sprintf(sql, "delete from offlinemessage where userid=%ld", userid);
@@ -27,7 +27,7 @@ void OfflineMsgModel::Remove(uint64_t userid) {
 }
 
 // 查询用户的离线消息
-vector<string> OfflineMsgModel::Query(uint64_t userid) {
+vector<string> OfflineMsgModel::Query(int64_t userid) {
     // 组装sql语句
     char sql[1024] = {0};
     sprintf(sql, "select message from offlinemessage where userid=%ld", userid);

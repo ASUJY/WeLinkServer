@@ -6,7 +6,7 @@
 // USER表的ORM类
 class User {
 public:
-    User(int id = -1, std::string phone = "", std::string account = "", std::string name = "",
+    User(int64_t id = -1, std::string phone = "", std::string account = "", std::string name = "",
          std::string avatar = "", std::string pwd = "", std::string state = "offline") {
         this->m_userid    = id;
         this->m_userphone = phone;
@@ -17,7 +17,7 @@ public:
         this->m_userstate = state;
     }
 
-    void SetUserId(int id) { this->m_userid = id; }
+    void SetUserId(int64_t id) { this->m_userid = id; }
     void SetUserPhone(std::string phone) { this->m_userphone = phone; }
     void SetUserAccount(std::string account) { this->m_account = account; }
     void SetUserName(std::string name) { this->m_username = name; }
@@ -25,7 +25,7 @@ public:
     void SetPwd(std::string pwd) { this->m_password = pwd; }
     void SetUserState(std::string state) { this->m_userstate = state; }
 
-    long long GetUserId() { return m_userid; }
+    int64_t GetUserId() { return m_userid; }
     std::string GetUserPhone() { return m_userphone; }
     std::string GetUserAccount() { return m_account; }
     std::string GetUserName() { return m_username; }
@@ -34,7 +34,7 @@ public:
     std::string GetUserState() { return m_userstate; }
 
 private:
-    long long m_userid;
+    int64_t m_userid;
     std::string m_userphone;
     std::string m_account;
     std::string m_username;

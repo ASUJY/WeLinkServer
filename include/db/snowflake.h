@@ -6,21 +6,21 @@
 class SnowflakeGenerator {
 public:
     SnowflakeGenerator(uint32_t workerid, uint32_t datacenerid);
-    uint64_t NextId();
+    int64_t NextId();
 
     SnowflakeGenerator(const SnowflakeGenerator&)            = delete;
     SnowflakeGenerator& operator=(const SnowflakeGenerator&) = delete;
 
 private:
     // 等待下一毫秒（处理序列号耗尽）
-    uint64_t WaitNextMillis(uint64_t lastTimestamp);
+    int64_t WaitNextMillis(int64_t lastTimestamp);
 
     // 获取当前毫秒时间戳
-    uint64_t CurrentTimestampMs();
+    int64_t CurrentTimestampMs();
 
 private:
     // 起始时间戳（2026-01-01 00:00:00 UTC）
-    static constexpr uint64_t TWEPOCH = 1767225600000;
+    static constexpr int64_t TWEPOCH = 1767225600000;
 
     static constexpr uint32_t DATACENTER_ID_BITS = 5;
     static constexpr uint32_t WORKER_ID_BITS     = 5;

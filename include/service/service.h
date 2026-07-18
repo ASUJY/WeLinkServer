@@ -36,14 +36,14 @@ public:
     void oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                  muduo::Timestamp time);
 
-    void HandleRedisSubscribeMessage(uint64_t userid, const std::string& msg);
+    void HandleRedisSubscribeMessage(int64_t userid, const std::string& msg);
 
 private:
     Service();  // 构造函数私有化，禁止外部创建
 
 private:
     std::unordered_map<E_MSG_TYPE, MsgHandler> m_msgHandlerMap;
-    std::unordered_map<int, muduo::net::TcpConnectionPtr> m_userConnMap;
+    std::unordered_map<int64_t, muduo::net::TcpConnectionPtr> m_userConnMap;
 
     std::mutex m_connMtx;
 

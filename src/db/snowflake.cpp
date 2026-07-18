@@ -10,7 +10,7 @@ SnowflakeGenerator::SnowflakeGenerator(uint32_t workerid, uint32_t datacenerid)
     }
 }
 
-uint64_t SnowflakeGenerator::NextId() {
+int64_t SnowflakeGenerator::NextId() {
     uint64_t timestamp = CurrentTimestampMs();
 
     std::lock_guard<std::mutex> locker(m_mtx);
@@ -34,16 +34,16 @@ uint64_t SnowflakeGenerator::NextId() {
            (m_workerId << WORKER_ID_SHIFT) | m_sequence;
 }
 
-uint64_t SnowflakeGenerator::WaitNextMillis(uint64_t lastTimestamp) {
-    uint64_t timestamp = CurrentTimestampMs();
+int64_t SnowflakeGenerator::WaitNextMillis(int64_t lastTimestamp) {
+    int64_t timestamp = CurrentTimestampMs();
     while (timestamp <= lastTimestamp) {
         timestamp = CurrentTimestampMs();
     }
     return timestamp;
 }
 
-uint64_t SnowflakeGenerator::CurrentTimestampMs() {
+int64_t SnowflakeGenerator::CurrentTimestampMs() {
     auto now = std::chrono::system_clock::now();
     auto ms  = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
-    return static_cast<uint64_t>(ms.count());
+    return static_cast<int64_t>(ms.count());
 }
