@@ -4,14 +4,18 @@
 
 // 存储用户的离线消息
 void OfflineMsgModel::Insert(int64_t userid, string msg) {
-    // 组装sql语句
-    char sql[1024] = {0};
-    sprintf(sql, "insert into offlinemessage values(%ld, '%s')", userid, msg.c_str());
-
     MySqlDB mysql;
-    if (mysql.Connect()) {
-        mysql.Update(sql);
+    if (!mysql.Connect()) {
+        return;
     }
+
+    // SQL模板，使用 ? 占位符，禁止拼接任何用户数据
+    std::string sql = "insert into offlinemessage values(?, ?)";
+    std::vector<SqlParam> params;
+    params.push_back({SqlParam::Type::INT64, userid, ""});
+    params.push_back({SqlParam::Type::STRING, 0, msg});
+
+    bool ok = mysql.UpdateStmt(sql, params);
 }
 
 // 删除用户的离线消息
