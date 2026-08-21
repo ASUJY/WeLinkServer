@@ -7,7 +7,7 @@
 bool UserModel::Insert(User& user) {
     char sql[1024] = {0};
     sprintf(sql,
-            "insert into im_user(uid, nickname, password, phone) values(%lld, '%s', '%s', '%s')",
+            "insert into im_user(uid, nickname, password, phone) values(%ld, '%s', '%s', '%s')",
             user.GetUserId(), user.GetUserName().c_str(), user.GetPwd().c_str(),
             user.GetUserPhone().c_str());
 
@@ -43,7 +43,7 @@ bool UserModel::QueryAccount(User& user, E_ACCOUNT_TYPE type) {
                 user.SetPwd(row[5]);
                 // if (passwd == user.GetPwd()) {
                 user.SetUserName(row[3]);
-                user.SetUserId(atoi(row[0]));
+                user.SetUserId(std::stoll(row[0]));
                 user.SetUserPhone(row[2]);
                 mysql_free_result(res);
                 return true;
