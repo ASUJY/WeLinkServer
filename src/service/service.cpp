@@ -235,6 +235,7 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
             }
 
             // 用户离线
+            m_offlineMsgModel.Insert(friendid, response.dump());
         }
     }
 }
@@ -279,6 +280,7 @@ void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
             }
 
             // 用户离线
+            m_offlineMsgModel.Insert(friendid, response.dump());
         }
     }
 }
@@ -305,6 +307,7 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
         return;
     }
 
+    // 用户不在线则暂时到服务器数据库中的离线消息表
     m_offlineMsgModel.Insert(receiverid, js.dump());
 }
 
