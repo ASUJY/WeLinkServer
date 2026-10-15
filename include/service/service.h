@@ -38,6 +38,8 @@ public:
 
     void HandleRedisSubscribeMessage(int64_t userid, const std::string& msg);
 
+    bool SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response);
+
 private:
     Service();  // 构造函数私有化，禁止外部创建
 

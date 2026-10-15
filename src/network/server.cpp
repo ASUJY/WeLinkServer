@@ -37,17 +37,45 @@ void Server::OnConnection(const muduo::net::TcpConnectionPtr& conn) {
 
 void Server::OnMessage(const muduo::net::TcpConnectionPtr& conn, muduo::net::Buffer* buffer,
                        muduo::Timestamp time) {
-    // 可优化地方，需要能够处理粘包半包的情况
-    std::string buf = buffer->retrieveAllAsString();
-    nlohmann::json js;
-    try {
-        js = nlohmann::json::parse(buf);
-    } catch (const nlohmann::json::exception& e) {
-        LOG_ERROR << "JSON parse error: " << e.what();
-        conn->shutdown();
-        return;
-    }
+    constexpr size_t kHeaderLen       = sizeof(int32_t);
+    constexpr uint32_t kMaxMessageLen = 1024 * 1024;
 
-    auto msgHandler = Service::instance()->GetHandler(js["msgtype"].get<int>());
-    msgHandler(conn, js, time);
+    // 循环处理缓冲区中的所有完整消息（处理粘包和半包问题）
+    while (buffer->readableBytes() >= kHeaderLen) {
+        int32_t len = buffer->peekInt32();
+        if (len <= 0 || static_cast<uint32_t>(len) > kMaxMessageLen) {
+            LOG_ERROR << "Invalid message length: " << len;
+            conn->shutdown();
+            return;
+        }
+
+        const size_t totalLen = kHeaderLen + static_cast<size_t>(len);
+
+        // 处理半包
+        if (buffer->readableBytes() < totalLen) {
+            break;
+        }
+
+        buffer->retrieve(kHeaderLen);
+        std::string body = buffer->retrieveAsString(static_cast<size_t>(len));
+        nlohmann::json js;
+        try {
+            js = nlohmann::json::parse(body);
+
+            // 检查必要字段
+            if (!js.is_object() || !js.contains("msgtype") || !js["msgtype"].is_number_integer()) {
+                LOG_ERROR << "Invalid JSON message format";
+                // 丢弃当前完整的错误消息，保留连接
+                continue;
+            }
+        } catch (const nlohmann::json::exception& e) {
+            LOG_ERROR << "JSON parse error: " << e.what();
+            // 丢弃当前完整的错误消息，保留连接
+            continue;
+            return;
+        }
+
+        auto msgHandler = Service::instance()->GetHandler(js["msgtype"].get<int>());
+        msgHandler(conn, js, time);
+    }
 }

@@ -150,7 +150,7 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
 
         response["data"]["errtype"] = E_ERR_TYPE::USER_NO_REGISTER;
     }
-    conn->send(response.dump());
+    SendJson(conn, response);
 }
 
 void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
@@ -185,7 +185,7 @@ void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json&
         response["msgtype"]         = E_MSG_TYPE::REG_MSG_ACK;
         response["data"]["errtype"] = E_ERR_TYPE::USER_EXIT;
     }
-    conn->send(response.dump());
+    SendJson(conn, response);
 }
 
 void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
@@ -204,7 +204,7 @@ void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr& conn, nlohmann::
         response["data"]["errtype"] = E_ERR_TYPE::GET_FRIEND_INFO_FAILED;
         LOG_INFO << "获取朋友失败";
     }
-    conn->send(response.dump());
+    SendJson(conn, response);
 }
 
 void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
@@ -225,7 +225,8 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
         if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
-            m_userConnMap[friendid]->send(response.dump());
+            // m_userConnMap[friendid]->send(response.dump());
+            SendJson(m_userConnMap[friendid], response);
         } else {
             // 查询用户是否在线
             auto state = m_userChangeModel.QueryState(friendid);
@@ -266,7 +267,8 @@ void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
                 m_friendModel.Insert(userid, friendid);
                 m_friendModel.Insert(friendid, userid);
             }
-            m_userConnMap[friendid]->send(response.dump());
+            // m_userConnMap[friendid]->send(response.dump());
+            SendJson(m_userConnMap[friendid], response);
         } else {
             // 查询用户是否在线
             auto state = m_userChangeModel.QueryState(friendid);
@@ -295,7 +297,9 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
         std::lock_guard<std::mutex> locker(m_connMtx);
         auto it = m_userConnMap.find(receiverid);
         if (it != m_userConnMap.end()) {
-            it->second->send(js.dump());
+            // it->second->send(js.dump());
+            LOG_INFO << "Service::oneChat js: " << js.dump();
+            SendJson(it->second, js);
             return;
         }
     }
@@ -303,6 +307,7 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
     // 查询toid是否在线
     auto state = m_userChangeModel.QueryState(receiverid);
     if (state == "online") {
+        LOG_INFO << "redis Service::oneChat js: " << js.dump();
         m_redis.Publish(receiverid, js.dump());
         return;
     }
@@ -316,9 +321,44 @@ void Service::HandleRedisSubscribeMessage(int64_t userid, const std::string& msg
         std::lock_guard<mutex> lock(m_connMtx);
         auto it = m_userConnMap.find(userid);
         if (it != m_userConnMap.end()) {
-            it->second->send(msg);
+            // it->second->send(msg);
+            nlohmann::json js = nlohmann::json::parse(msg);
+            SendJson(it->second, js);
             return;
         }
     }
     m_offlineMsgModel.Insert(userid, msg);
+}
+
+bool Service::SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response) {
+    constexpr uint32_t kMaxMessageLen = 1024 * 1024;  // 1MB
+
+    if (!conn || !conn->connected()) {
+        LOG_WARN << "Cannot send JSON: connection is not connected";
+        return false;
+    }
+
+    std::string body;
+    try {
+        body = response.dump();
+    } catch (const nlohmann::json::exception& e) {
+        LOG_ERROR << "JSON serialization failed: " << e.what();
+        return false;
+    }
+
+    if (body.empty() || body.size() > kMaxMessageLen) {
+        LOG_ERROR << "Invalid outgoing message length: " << body.size();
+        return false;
+    }
+
+    const uint32_t bodyLen = static_cast<uint32_t>(body.size());
+    const uint32_t netLen  = htonl(bodyLen);
+
+    std::string packet(sizeof(netLen), '\0');
+    std::memcpy(&packet[0], &netLen, sizeof(netLen));
+    packet += body;
+
+    conn->send(packet);
+
+    return true;
 }
