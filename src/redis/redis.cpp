@@ -1,7 +1,8 @@
 #include "redis.h"
 
 #include <muduo/base/Logging.h>
-
+#include <poll.h>
+#include <sys/socket.h>
 namespace {
 struct RedisReplyDeleter {
     void operator()(redisReply* reply) const noexcept {
@@ -17,6 +18,14 @@ using RedisReplyPtr = std::unique_ptr<redisReply, RedisReplyDeleter>;
 Redis::Redis() : m_publishContext(nullptr), m_subscribeContext(nullptr) {}
 
 Redis::~Redis() {
+    m_stop.store(true);
+    if (m_subscribeContext != nullptr) {
+        // 关闭订阅连接底层 socket 的读写
+        shutdown(m_subscribeContext->fd, SHUT_RDWR);
+    }
+    if (m_workerThread.joinable()) {
+        m_workerThread.join();
+    }
     if (m_publishContext != nullptr) {
         redisFree(m_publishContext);
         m_publishContext = nullptr;
@@ -60,9 +69,10 @@ bool Redis::Connect() {
         return false;
     }
 
+    m_stop.store(false);
+
     // 在单独的线程中，监听通道上的事件，有消息给业务层进行上报
-    std::thread t([&]() { ObserverChannelMessage(); });
-    t.detach();
+    m_workerThread = std::thread([this]() { ObserverChannelMessage(); });
 
     LOG_INFO << "connect redis-server success!";
     return true;
@@ -74,8 +84,8 @@ bool Redis::Publish(int64_t channel, const std::string& message) {
         return false;
     }
 
-    RedisReplyPtr reply(static_cast<redisReply*>(
-        redisCommand(m_publishContext, "PUBLISH %llu %s", channel, message.c_str())));
+    RedisReplyPtr reply(static_cast<redisReply*>(redisCommand(
+        m_publishContext, "PUBLISH %lld %s", static_cast<long long>(channel), message.c_str())));
 
     if (nullptr == reply) {
         LOG_ERROR << "publish command failed (no reply)";
@@ -96,7 +106,8 @@ bool Redis::Subscribe(int64_t channel) {
         return false;
     }
 
-    if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "SUBSCRIBE %llu", channel)) {
+    if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "SUBSCRIBE %lld",
+                                        static_cast<long long>(channel))) {
         LOG_ERROR << "subscribe append command failed!";
         return false;
     }
@@ -109,6 +120,11 @@ bool Redis::Subscribe(int64_t channel) {
         }
     }
 
+    {
+        std::lock_guard<std::mutex> lock(m_subscribeMtx);
+        m_subscribedChannels.insert(channel);
+    }
+
     return true;
 }
 
@@ -118,7 +134,8 @@ bool Redis::Unsubscribe(int64_t channel) {
         return false;
     }
 
-    if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "UNSUBSCRIBE %llu", channel)) {
+    if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "UNSUBSCRIBE %lld",
+                                        static_cast<long long>(channel))) {
         LOG_ERROR << "unsubscribe append command failed!";
         return false;
     }
@@ -131,21 +148,47 @@ bool Redis::Unsubscribe(int64_t channel) {
         }
     }
 
+    {
+        std::lock_guard<std::mutex> lock(m_subscribeMtx);
+        m_subscribedChannels.erase(channel);
+    }
+
     return true;
 }
 
 void Redis::ObserverChannelMessage() {
-    redisReply* reply = nullptr;
-    while (REDIS_OK == redisGetReply(this->m_subscribeContext, (void**)&reply)) {
-        // 订阅收到的消息是一个带三元素的数组
-        if (reply != nullptr && reply->element[2] != nullptr && reply->element[2]->str != nullptr) {
-            // 给业务层上报通道上发生的消息
-            m_notifyMessageHandler(atoi(reply->element[1]->str), reply->element[2]->str);
+    while (!m_stop.load()) {
+        pollfd descriptor{};
+        descriptor.fd     = m_subscribeContext->fd;
+        descriptor.events = POLLIN;
+        const int ready   = poll(&descriptor, 1, 100);
+        if (ready == 0) continue;
+        if (ready < 0 || (descriptor.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            break;
         }
 
-        freeReplyObject(reply);
-    }
+        redisReply* reply = nullptr;
+        if (redisGetReply(this->m_subscribeContext, reinterpret_cast<void**>(&reply)) != REDIS_OK) {
+            break;
+        }
 
+        RedisReplyPtr replyPtr(reply);
+        // Only forward actual Pub/Sub messages; SUBSCRIBE/UNSUBSCRIBE
+        // acknowledgements have a different shape and are not user messages.
+        if (reply && reply->type == REDIS_REPLY_ARRAY && reply->elements >= 3 &&
+            reply->element[0] && reply->element[0]->str &&
+            std::string(reply->element[0]->str) == "message" && reply->element[1] &&
+            reply->element[1]->str && reply->element[2] && reply->element[2]->str) {
+            std::function<void(int64_t, std::string)> callback;
+            {
+                std::lock_guard<std::mutex> lock(m_callbackMtx);
+                callback = m_notifyMessageHandler;
+            }
+            if (callback) {
+                callback(std::strtoll(reply->element[1]->str, nullptr, 10), reply->element[2]->str);
+            }
+        }
+    }
     LOG_ERROR << ">>>>>>>>>>>>> observer_channel_message quit <<<<<<<<<<<<<";
 }
 

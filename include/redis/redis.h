@@ -8,6 +8,7 @@
 #include <functional>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <thread>
 
 class Redis {
@@ -27,7 +28,7 @@ public:
     bool Subscribe(int64_t channel);
     bool Unsubscribe(int64_t channel);
 
-    // 设置回调
+    // 设置回调(注册 Redis 通知/订阅回调)
     void InitNotifyHandler(std::function<void(int64_t, const std::string&)> fn);
 
     void ObserverChannelMessage();
@@ -44,6 +45,9 @@ private:
 
     std::mutex m_callbackMtx;
     std::function<void(int64_t, std::string)> m_notifyMessageHandler;
+
+    std::mutex m_subscribeMtx;
+    std::set<int64_t> m_subscribedChannels;  // 记录本地已订阅的频道
 };
 
 #endif
