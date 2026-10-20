@@ -37,36 +37,41 @@ Redis::~Redis() {
 }
 
 bool Redis::Connect() {
-    if (m_publishContext) {
-        redisFree(m_publishContext);
-        m_publishContext = nullptr;
-    }
-    if (m_subscribeContext) {
-        redisFree(m_subscribeContext);
-        m_subscribeContext = nullptr;
-    }
+    {
+        std::lock_guard<std::mutex> lock(m_publishMtx);
+        std::lock_guard<std::mutex> lock1(m_subscrMtx);
 
-    // 负责publish发布消息的上下文连接
-    m_publishContext = redisConnect("127.0.0.1", 6379);
-    if (nullptr == m_publishContext || m_publishContext->err) {
-        LOG_ERROR << "redis connect fail: "
-                  << (m_publishContext ? m_publishContext->errstr : "malloc failed");
-        redisFree(m_publishContext);
-        m_publishContext = nullptr;
-        return false;
-    }
+        if (m_publishContext) {
+            redisFree(m_publishContext);
+            m_publishContext = nullptr;
+        }
+        if (m_subscribeContext) {
+            redisFree(m_subscribeContext);
+            m_subscribeContext = nullptr;
+        }
 
-    // 负责subscribe订阅消息的上下文连接
-    m_subscribeContext = redisConnect("127.0.0.1", 6379);
-    if (nullptr == m_subscribeContext || m_subscribeContext->err) {
-        LOG_ERROR << "subscribe connect fail: "
-                  << (m_subscribeContext ? m_subscribeContext->errstr : "malloc failed");
+        // 负责publish发布消息的上下文连接
+        m_publishContext = redisConnect("127.0.0.1", 6379);
+        if (nullptr == m_publishContext || m_publishContext->err) {
+            LOG_ERROR << "redis connect fail: "
+                      << (m_publishContext ? m_publishContext->errstr : "malloc failed");
+            redisFree(m_publishContext);
+            m_publishContext = nullptr;
+            return false;
+        }
 
-        redisFree(m_subscribeContext);
-        m_subscribeContext = nullptr;
-        redisFree(m_publishContext);
-        m_publishContext = nullptr;
-        return false;
+        // 负责subscribe订阅消息的上下文连接
+        m_subscribeContext = redisConnect("127.0.0.1", 6379);
+        if (nullptr == m_subscribeContext || m_subscribeContext->err) {
+            LOG_ERROR << "subscribe connect fail: "
+                      << (m_subscribeContext ? m_subscribeContext->errstr : "malloc failed");
+
+            redisFree(m_subscribeContext);
+            m_subscribeContext = nullptr;
+            redisFree(m_publishContext);
+            m_publishContext = nullptr;
+            return false;
+        }
     }
 
     m_stop.store(false);
@@ -79,6 +84,7 @@ bool Redis::Connect() {
 }
 
 bool Redis::Publish(int64_t channel, const std::string& message) {
+    std::lock_guard<std::mutex> lock(m_publishMtx);
     if (!m_publishContext) {
         LOG_ERROR << "publish context is null";
         return false;
@@ -101,27 +107,34 @@ bool Redis::Publish(int64_t channel, const std::string& message) {
 }
 
 bool Redis::Subscribe(int64_t channel) {
-    if (!m_subscribeContext) {
-        LOG_ERROR << "subscribe context is null";
-        return false;
-    }
+    {
+        std::lock_guard<std::mutex> lock(m_subscrMtx);
+        if (!m_subscribeContext) {
+            LOG_ERROR << "subscribe context is null";
+            return false;
+        }
 
-    if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "SUBSCRIBE %lld",
-                                        static_cast<long long>(channel))) {
-        LOG_ERROR << "subscribe append command failed!";
-        return false;
-    }
-
-    int done = 0;
-    while (!done) {
-        if (REDIS_ERR == redisBufferWrite(this->m_subscribeContext, &done)) {
-            LOG_ERROR << "subscribe buffer write failed!";
+        if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "SUBSCRIBE %lld",
+                                            static_cast<long long>(channel))) {
+            LOG_ERROR << "subscribe append command failed!";
             return false;
         }
     }
 
+    int done = 0;
+    while (!done) {
+        {
+            std::lock_guard<std::mutex> lock(m_subscrMtx);
+
+            if (REDIS_ERR == redisBufferWrite(this->m_subscribeContext, &done)) {
+                LOG_ERROR << "subscribe buffer write failed!";
+                return false;
+            }
+        }
+    }
+
     {
-        std::lock_guard<std::mutex> lock(m_subscribeMtx);
+        std::lock_guard<std::mutex> lock(m_subscribeChanelMtx);
         m_subscribedChannels.insert(channel);
     }
 
@@ -129,27 +142,33 @@ bool Redis::Subscribe(int64_t channel) {
 }
 
 bool Redis::Unsubscribe(int64_t channel) {
-    if (!m_subscribeContext) {
-        LOG_ERROR << "subscribe context is null";
-        return false;
-    }
+    {
+        std::lock_guard<std::mutex> lock(m_subscrMtx);
+        if (!m_subscribeContext) {
+            LOG_ERROR << "subscribe context is null";
+            return false;
+        }
 
-    if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "UNSUBSCRIBE %lld",
-                                        static_cast<long long>(channel))) {
-        LOG_ERROR << "unsubscribe append command failed!";
-        return false;
+        if (REDIS_ERR == redisAppendCommand(this->m_subscribeContext, "UNSUBSCRIBE %lld",
+                                            static_cast<long long>(channel))) {
+            LOG_ERROR << "unsubscribe append command failed!";
+            return false;
+        }
     }
     // redisBufferWrite可以循环发送缓冲区，直到缓冲区数据发送完毕（done被置为1）
     int done = 0;
     while (!done) {
-        if (REDIS_ERR == redisBufferWrite(this->m_subscribeContext, &done)) {
-            LOG_ERROR << "unsubscribe buffer write failed!";
-            return false;
+        {
+            std::lock_guard<std::mutex> lock(m_subscrMtx);
+            if (REDIS_ERR == redisBufferWrite(this->m_subscribeContext, &done)) {
+                LOG_ERROR << "unsubscribe buffer write failed!";
+                return false;
+            }
         }
     }
 
     {
-        std::lock_guard<std::mutex> lock(m_subscribeMtx);
+        std::lock_guard<std::mutex> lock(m_subscribeChanelMtx);
         m_subscribedChannels.erase(channel);
     }
 
@@ -159,7 +178,10 @@ bool Redis::Unsubscribe(int64_t channel) {
 void Redis::ObserverChannelMessage() {
     while (!m_stop.load()) {
         pollfd descriptor{};
-        descriptor.fd     = m_subscribeContext->fd;
+        {
+            std::lock_guard<std::mutex> lock(m_subscrMtx);
+            descriptor.fd = m_subscribeContext->fd;
+        }
         descriptor.events = POLLIN;
         const int ready   = poll(&descriptor, 1, 100);
         if (ready == 0) continue;
@@ -168,8 +190,12 @@ void Redis::ObserverChannelMessage() {
         }
 
         redisReply* reply = nullptr;
-        if (redisGetReply(this->m_subscribeContext, reinterpret_cast<void**>(&reply)) != REDIS_OK) {
-            break;
+        {
+            std::lock_guard<std::mutex> lock(m_subscrMtx);
+            if (redisGetReply(this->m_subscribeContext, reinterpret_cast<void**>(&reply)) !=
+                REDIS_OK) {
+                break;
+            }
         }
 
         RedisReplyPtr replyPtr(reply);

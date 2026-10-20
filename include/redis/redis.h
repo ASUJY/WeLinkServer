@@ -36,17 +36,16 @@ public:
 private:
     redisContext* m_publishContext   = nullptr;  // 发布上下文（仅主线程使用）
     redisContext* m_subscribeContext = nullptr;  // 订阅上下文（由工作线程独占操作）
+    std::mutex m_subscrMtx;
+    std::mutex m_publishMtx;
 
     std::atomic<bool> m_stop{false};
     std::thread m_workerThread;
-    std::mutex m_queueMtx;
-    std::condition_variable m_queueCondv;
-    std::queue<std::function<void()>> m_taskQueue;
 
     std::mutex m_callbackMtx;
     std::function<void(int64_t, std::string)> m_notifyMessageHandler;
 
-    std::mutex m_subscribeMtx;
+    std::mutex m_subscribeChanelMtx;
     std::set<int64_t> m_subscribedChannels;  // 记录本地已订阅的频道
 };
 
