@@ -1,4 +1,4 @@
-set (TEST_SRC snowflake_test.cpp)
+set (TEST_SRC snowflake_test.cpp redis_integration_test.cpp)
 
 add_executable(run_all_test ${TEST_SRC})
 target_link_libraries(run_all_test
