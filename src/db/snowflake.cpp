@@ -1,5 +1,7 @@
 #include "snowflake.h"
 
+#include <stdexcept>
+
 SnowflakeGenerator::SnowflakeGenerator(uint32_t workerid, uint32_t datacenerid)
     : m_datacenterId(datacenerid), m_workerId(workerid), m_sequence(0), m_lastTimestamp(0) {
     if (workerid > MAX_WORKER_ID) {
