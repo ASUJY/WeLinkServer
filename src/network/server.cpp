@@ -7,6 +7,7 @@
 #include <string>
 
 #include "common.h"
+#include "protocol.h"
 #include "service.h"
 
 Server::Server(muduo::net::EventLoop* loop, const muduo::net::InetAddress& listenAddr,
@@ -37,44 +38,27 @@ void Server::OnConnection(const muduo::net::TcpConnectionPtr& conn) {
 
 void Server::OnMessage(const muduo::net::TcpConnectionPtr& conn, muduo::net::Buffer* buffer,
                        muduo::Timestamp time) {
-    constexpr size_t kHeaderLen       = sizeof(int32_t);
-    constexpr uint32_t kMaxMessageLen = 1024 * 1024;
+    std::vector<std::string> frames;
+    size_t consumed = 0;
+    const auto status =
+        protocol::DecodeFrames(buffer->peek(), buffer->readableBytes(), frames, consumed);
 
-    // 循环处理缓冲区中的所有完整消息（处理粘包和半包问题）
-    while (buffer->readableBytes() >= kHeaderLen) {
-        int32_t len = buffer->peekInt32();
-        if (len <= 0 || static_cast<uint32_t>(len) > kMaxMessageLen) {
-            LOG_ERROR << "Invalid message length: " << len;
-            conn->shutdown();
-            return;
-        }
+    if (status == protocol::DecodeStatus::INVALID_LENGTH) {
+        LOG_ERROR << "Invalid message length";
+        conn->shutdown();
+        return;
+    }
 
-        const size_t totalLen = kHeaderLen + static_cast<size_t>(len);
+    buffer->retrieve(consumed);
 
-        // 处理半包
-        if (buffer->readableBytes() < totalLen) {
-            break;
-        }
-
-        buffer->retrieve(kHeaderLen);
-        std::string body = buffer->retrieveAsString(static_cast<size_t>(len));
+    for (const auto& body : frames) {
         nlohmann::json js;
-        try {
-            js = nlohmann::json::parse(body);
-
-            // 检查必要字段
-            if (!js.is_object() || !js.contains("msgtype") || !js["msgtype"].is_number_integer()) {
-                LOG_ERROR << "Invalid JSON message format";
-                // 丢弃当前完整的错误消息，保留连接
-                continue;
-            }
-        } catch (const nlohmann::json::exception& e) {
-            LOG_ERROR << "JSON parse error: " << e.what();
-            // 丢弃当前完整的错误消息，保留连接
+        if (!protocol::ParseJsonMessage(body, js)) {
+            LOG_ERROR << "Invalid JSON message format";
             continue;
-            return;
         }
 
+        // business dispatch
         auto msgHandler = Service::instance()->GetHandler(js["msgtype"].get<int>());
         msgHandler(conn, js, time);
     }

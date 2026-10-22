@@ -6,6 +6,7 @@
 #include <string>
 
 #include "common.h"
+#include "protocol.h"
 #include "snowflake.h"
 
 // 单例
@@ -331,8 +332,6 @@ void Service::HandleRedisSubscribeMessage(int64_t userid, const std::string& msg
 }
 
 bool Service::SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response) {
-    constexpr uint32_t kMaxMessageLen = 1024 * 1024;  // 1MB
-
     if (!conn || !conn->connected()) {
         LOG_WARN << "Cannot send JSON: connection is not connected";
         return false;
@@ -346,17 +345,11 @@ bool Service::SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann:
         return false;
     }
 
-    if (body.empty() || body.size() > kMaxMessageLen) {
+    std::string packet;
+    if (!protocol::EncodeFrame(body, packet)) {
         LOG_ERROR << "Invalid outgoing message length: " << body.size();
         return false;
     }
-
-    const uint32_t bodyLen = static_cast<uint32_t>(body.size());
-    const uint32_t netLen  = htonl(bodyLen);
-
-    std::string packet(sizeof(netLen), '\0');
-    std::memcpy(&packet[0], &netLen, sizeof(netLen));
-    packet += body;
 
     conn->send(packet);
 
