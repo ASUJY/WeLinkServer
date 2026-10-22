@@ -47,6 +47,7 @@ add_subdirectory(src)
 if(BUILD_TESTS)
     # 收集全部业务源文件
     file(GLOB SRC_LIST
+        ${PROJECT_SOURCE_DIR}/src/config.cpp
         ${PROJECT_SOURCE_DIR}/src/db/*.cpp
         ${PROJECT_SOURCE_DIR}/src/redis/*.cpp
         ${PROJECT_SOURCE_DIR}/src/model/*.cpp

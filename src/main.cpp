@@ -1,6 +1,7 @@
 #include <muduo/base/AsyncLogging.h>
 #include <muduo/base/Logging.h>
 
+#include "config.h"
 #include "server.h"
 
 muduo::AsyncLogging* g_asyncLog = nullptr;
@@ -18,6 +19,14 @@ int main(int argc, char** argv) {
     muduo::Logger::setOutput(asyncOutput);
     // ============== 3. 启动异步日志线程 ==============
     log.start();
+
+    try {
+        AppConfig::Instance();
+    } catch (const std::exception& error) {
+        LOG_ERROR << "load configuration failed: " << error.what();
+        log.stop();
+        return 1;
+    }
 
     if (argc < 2) {
         LOG_ERROR << "command invalid! example: ./WeLinkServer 6000";

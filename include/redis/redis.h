@@ -9,6 +9,7 @@
 #include <mutex>
 #include <queue>
 #include <set>
+#include <string>
 #include <thread>
 
 class Redis {
@@ -34,6 +35,9 @@ public:
     void ObserverChannelMessage();
 
 private:
+    std::string m_host;
+    int m_port;
+    std::string m_password;
     redisContext* m_publishContext   = nullptr;  // 发布上下文（仅主线程使用）
     redisContext* m_subscribeContext = nullptr;  // 订阅上下文（由工作线程独占操作）
     std::mutex m_subscrMtx;

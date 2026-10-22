@@ -3,6 +3,8 @@
 #include <muduo/base/Logging.h>
 #include <poll.h>
 #include <sys/socket.h>
+
+#include "config.h"
 namespace {
 struct RedisReplyDeleter {
     void operator()(redisReply* reply) const noexcept {
@@ -15,7 +17,12 @@ struct RedisReplyDeleter {
 using RedisReplyPtr = std::unique_ptr<redisReply, RedisReplyDeleter>;
 }  // namespace
 
-Redis::Redis() : m_publishContext(nullptr), m_subscribeContext(nullptr) {}
+Redis::Redis()
+    : m_host(AppConfig::Instance().redis.host),
+      m_port(AppConfig::Instance().redis.port),
+      m_password(AppConfig::Instance().redis.password),
+      m_publishContext(nullptr),
+      m_subscribeContext(nullptr) {}
 
 Redis::~Redis() {
     m_stop.store(true);
@@ -51,7 +58,7 @@ bool Redis::Connect() {
         }
 
         // 负责publish发布消息的上下文连接
-        m_publishContext = redisConnect("127.0.0.1", 6379);
+        m_publishContext = redisConnect(m_host.c_str(), m_port);
         if (nullptr == m_publishContext || m_publishContext->err) {
             LOG_ERROR << "redis connect fail: "
                       << (m_publishContext ? m_publishContext->errstr : "malloc failed");
@@ -60,8 +67,19 @@ bool Redis::Connect() {
             return false;
         }
 
+        if (!m_password.empty()) {
+            RedisReplyPtr authReply(static_cast<redisReply*>(
+                redisCommand(m_publishContext, "AUTH %s", m_password.c_str())));
+            if (!authReply || authReply->type == REDIS_REPLY_ERROR) {
+                LOG_ERROR << "redis publish authentication failed";
+                redisFree(m_publishContext);
+                m_publishContext = nullptr;
+                return false;
+            }
+        }
+
         // 负责subscribe订阅消息的上下文连接
-        m_subscribeContext = redisConnect("127.0.0.1", 6379);
+        m_subscribeContext = redisConnect(m_host.c_str(), m_port);
         if (nullptr == m_subscribeContext || m_subscribeContext->err) {
             LOG_ERROR << "subscribe connect fail: "
                       << (m_subscribeContext ? m_subscribeContext->errstr : "malloc failed");
@@ -71,6 +89,19 @@ bool Redis::Connect() {
             redisFree(m_publishContext);
             m_publishContext = nullptr;
             return false;
+        }
+
+        if (!m_password.empty()) {
+            RedisReplyPtr authReply(static_cast<redisReply*>(
+                redisCommand(m_subscribeContext, "AUTH %s", m_password.c_str())));
+            if (!authReply || authReply->type == REDIS_REPLY_ERROR) {
+                LOG_ERROR << "redis subscribe authentication failed";
+                redisFree(m_subscribeContext);
+                m_subscribeContext = nullptr;
+                redisFree(m_publishContext);
+                m_publishContext = nullptr;
+                return false;
+            }
         }
     }
 

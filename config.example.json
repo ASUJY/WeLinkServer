@@ -1,0 +1,15 @@
+{
+  "mysql": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "your_mysql_user",
+    "password": "your_mysql_password",
+    "database": "im_db",
+    "charset": "utf8mb4"
+  },
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "password": ""
+  }
+}

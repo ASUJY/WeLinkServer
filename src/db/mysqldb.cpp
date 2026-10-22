@@ -2,15 +2,7 @@
 
 #include <muduo/base/Logging.h>
 
-#include <string>
-
-using namespace std;
-
-// 数据库配置信息
-static string server   = "127.0.0.1";
-static string user     = "root";
-static string password = "root";
-static string dbname   = "im_db";
+#include "config.h"
 
 MySqlDB::MySqlDB() { m_conn = mysql_init(nullptr); }
 
@@ -23,12 +15,14 @@ MySqlDB::~MySqlDB() {
 }
 
 bool MySqlDB::Connect() {
-    MYSQL* p = mysql_real_connect(m_conn, server.c_str(), user.c_str(), password.c_str(),
-                                  dbname.c_str(), 3306, nullptr, 0);
+    const MySqlConfig& config = AppConfig::Instance().mysql;
+    MYSQL* p = mysql_real_connect(m_conn, config.host.c_str(), config.user.c_str(),
+                                  config.password.c_str(), config.database.c_str(), config.port,
+                                  nullptr, 0);
 
     if (p != nullptr) {
         // 设置字符编码是utf8mb4
-        mysql_set_character_set(m_conn, "utf8mb4");
+        mysql_set_character_set(m_conn, config.charset.c_str());
         LOG_INFO << "connect mysql success!";
     } else {
         LOG_INFO << "connect mysql fail! err: " << mysql_error(m_conn);
@@ -37,7 +31,7 @@ bool MySqlDB::Connect() {
 }
 
 // 更新操作
-bool MySqlDB::Update(string sql) {
+bool MySqlDB::Update(std::string sql) {
     if (mysql_query(m_conn, sql.c_str())) {
         LOG_INFO << __FILE__ << ":" << __LINE__ << ":" << sql << "更新失败!";
         return false;
@@ -46,7 +40,7 @@ bool MySqlDB::Update(string sql) {
 }
 
 // 查询操作
-MYSQL_RES* MySqlDB::Query(string sql) {
+MYSQL_RES* MySqlDB::Query(std::string sql) {
     if (mysql_query(m_conn, sql.c_str())) {
         LOG_INFO << __FILE__ << ":" << __LINE__ << ":" << sql << "查询失败!";
         return nullptr;

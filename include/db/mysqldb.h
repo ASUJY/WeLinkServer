@@ -3,7 +3,6 @@
 
 #include <mysql/mysql.h>
 
-#include <string>
 #include <vector>
 
 #include "db.h"

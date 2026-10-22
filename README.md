@@ -22,6 +22,10 @@
 - MySQL服务
 - Redis服务
 
+启动前请将 `config.example.json` 复制为 `config.json`，并填写 MySQL 和 Redis 的连接参数。  
+- 默认从当前工作目录读取 `config.json`；也可通过 `WE_LINK_CONFIG` 环境变量指定配置文件路径。
+- Redis 的 `password` 留空表示不启用密码认证。
+
 # 模块说明
 > 典型请求处理路径为：网络层读取并解析帧 → 业务层按消息类型分发 → 模型访问 MySQL 或 Redis → 网络层向客户端发送 JSON 响应。
 
