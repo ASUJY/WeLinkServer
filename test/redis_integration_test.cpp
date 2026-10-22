@@ -32,8 +32,8 @@ int64_t UniqueChannel() {
  * 测试用例名称：PublishSubscribeAndUnsubscribe
  */
 TEST(RedisIntegrationTest, PublishSubscribeAndUnsubscribe) {
-    // Opt in explicitly because this test requires a real Redis server at
-    // 127.0.0.1:6379. Start Redis, then set WE_LINK_REDIS_INTEGRATION=1.
+    // Opt in explicitly because this test requires a real Redis server
+    // configured in config.json. Start Redis, then set WE_LINK_REDIS_INTEGRATION=1.
     RequireIntegrationRedis();
 
     std::mutex mutex;
@@ -55,7 +55,7 @@ TEST(RedisIntegrationTest, PublishSubscribeAndUnsubscribe) {
     });
 
     // 断言 Redis 连接成功；失败则测试终止并输出提示。
-    ASSERT_TRUE(redis.Connect()) << "Redis must be available at 127.0.0.1:6379";
+    ASSERT_TRUE(redis.Connect()) << "Redis must be available at the configured endpoint";
 
     const int64_t channel = UniqueChannel();
     // 断言订阅指定频道成功
