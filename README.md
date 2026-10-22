@@ -53,7 +53,7 @@
 > - 使用 Muduo 异步日志写入服务日志。  
 
 [业务模块](doc/service.md)  
-[网络通信模块](doc/redis.md)  
+[网络通信模块](doc/network.md)  
 [数据库模块](doc/db.md)  
 [Redis模块](doc/redis.md)  
 [日志模块](doc/log.md)  
