@@ -25,11 +25,12 @@ std::string UserChangeModel::QueryState(int64_t userid) {
         MYSQL_RES* res = mysql.Query(sql);
         if (res != nullptr) {
             MYSQL_ROW row = mysql_fetch_row(res);
+            std::string state;
             if (row != nullptr) {
-                std::string state = row[0];
-                mysql_free_result(res);
-                return state;
+                state = row[0];
             }
+            mysql_free_result(res);
+            return state;
         }
     }
 
