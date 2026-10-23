@@ -42,7 +42,7 @@
 |  Redis 消息层  | `src/redis/redis.cpp`                | 使用 Redis Pub/Sub 在服务端实例间转发在线消息，并通过订阅回调通知业务层。         |
 |   ID 生成器    | `src/db/snowflake.cpp`               | 生成并发安全的 Snowflake 64 位 ID。                                               |
 | 公共协议与模型 | `include/common.h`、`include/model/` | 定义消息/错误类型、好友状态及用户数据结构。                                       |
-|      测试      | `test/`                              | 包含 Snowflake 单元测试及可选的 Redis 集成测试。                                  |
+|      测试      | `test/`                              | 包含配置、网络协议、Snowflake 单元测试及可选的 Redis、MySQL 集成测试。            |
 |    运维脚本    | `scripts/`                           | 提供 `WeLinkServer` 进程监控和钉钉告警脚本。                                      |
 
 
