@@ -8,6 +8,6 @@
 |    是    |       EncodeFrame        | 编码时拒绝空消息体和超过 1 MB 的消息体。                                                                                             |        EncodeRejectsEmptyAndOversizedBodies        |
 |    是    | EncodeFrame,DecodeFrames | 验证大小恰好为 1 MB 的消息体可以成功编码并解码，内容和消费字节数正确。                                                               |         EncodesAndDecodesMaximumSizedBody          |
 |    是    |       DecodeFrames       | 验证空输入被视为完整缓冲区，解码结果为 OK，且消费字节数为 0                                                                          |         EmptyInputIsAnEmptyCompleteBuffer          |
-|    是    |     ParseJsonMessage     | 验证 JSON 中的 msgtype 为浮点数或 null，以及 JSON 顶层为 null 时，解析会失败。                                                       |           RejectsNonIntegerMessageTypes            |
 |    是    |       EncodeFrame        | 编码出的长度头使用网络字节序，且后面紧跟原始消息体。                                                                                 |          EncodesLengthInNetworkByteOrder           |
 |    是    |     ParseJsonMessage     | 只接受合法 JSON 对象，且必须包含整数类型的 msgtype；拒绝非法 JSON、缺少 msgtype、msgtype 类型错误或 JSON 顶层不是对象的内容。        |          ParsesOnlyValidMessageEnvelopes           |
+|    是    |     ParseJsonMessage     | 验证 JSON 中的 msgtype 为浮点数或 null，以及 JSON 顶层为 null 时，解析会失败。                                                       |           RejectsNonIntegerMessageTypes            |
