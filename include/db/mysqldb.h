@@ -24,8 +24,10 @@ public:
     bool Update(std::string sql) override;
     MYSQL_RES* Query(std::string sql) override;
 
-    // 预处理更新接口（杜绝SQL注入） ==========
+    // 预处理接口（杜绝SQL注入） ==========
     bool UpdateStmt(const std::string& sql_template, const std::vector<SqlParam>& params);
+    bool QueryStmt(const std::string& sql_template, const std::vector<SqlParam>& params,
+                   std::vector<std::vector<std::string>>& rows);
 
 private:
     MYSQL* m_conn;

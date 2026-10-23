@@ -3,38 +3,31 @@
 #include "mysqldb.h"
 
 bool UserChangeModel::Insert(User& user) {
-    char sql[1024] = {0};
-    sprintf(sql, "insert into im_userchange(userid, state) values(%ld, '%s')", user.GetUserId(),
-            user.GetUserState().c_str());
-
     MySqlDB mysql;
-    if (mysql.Connect()) {
-        if (mysql.Update(sql)) {
-            return true;
-        }
+    if (!mysql.Connect()) {
+        return false;
     }
-    return false;
+
+    const std::vector<SqlParam> params = {
+        {SqlParam::Type::INT64, user.GetUserId(), ""},
+        {SqlParam::Type::STRING, 0, user.GetUserState()},
+    };
+    return mysql.UpdateStmt("insert into im_userchange(userid, state) values(?, ?)", params);
 }
 
 std::string UserChangeModel::QueryState(int64_t userid) {
-    char sql[1024] = {0};
-    sprintf(sql, "select state from im_userchange where userid = %ld", userid);
-
     MySqlDB mysql;
-    if (mysql.Connect()) {
-        MYSQL_RES* res = mysql.Query(sql);
-        if (res != nullptr) {
-            MYSQL_ROW row = mysql_fetch_row(res);
-            std::string state;
-            if (row != nullptr) {
-                state = row[0];
-            }
-            mysql_free_result(res);
-            return state;
-        }
+    if (!mysql.Connect()) {
+        return "";
     }
 
-    return "";
+    std::vector<std::vector<std::string>> rows;
+    if (!mysql.QueryStmt("select state from im_userchange where userid = ?",
+                         {{SqlParam::Type::INT64, userid, ""}}, rows) ||
+        rows.empty() || rows[0].empty()) {
+        return "";
+    }
+    return rows[0][0];
 }
 
 bool UserChangeModel::UpdateState(User& user) {
@@ -42,14 +35,14 @@ bool UserChangeModel::UpdateState(User& user) {
 }
 
 bool UserChangeModel::UpdateState(int64_t userid, const std::string& state) {
-    char sql[1024] = {0};
-    sprintf(sql, "update im_userchange set state = '%s' where userid = %ld", state.c_str(), userid);
-
     MySqlDB mysql;
-    if (mysql.Connect()) {
-        if (mysql.Update(sql)) {
-            return true;
-        }
+    if (!mysql.Connect()) {
+        return false;
     }
-    return false;
+
+    const std::vector<SqlParam> params = {
+        {SqlParam::Type::STRING, 0, state},
+        {SqlParam::Type::INT64, userid, ""},
+    };
+    return mysql.UpdateStmt("update im_userchange set state = ? where userid = ?", params);
 }

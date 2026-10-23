@@ -2,6 +2,8 @@
 
 #include <muduo/base/Logging.h>
 
+#include <memory>
+
 #include "config.h"
 
 MySqlDB::MySqlDB() { m_conn = mysql_init(nullptr); }
@@ -15,6 +17,11 @@ MySqlDB::~MySqlDB() {
 }
 
 bool MySqlDB::Connect() {
+    if (m_conn == nullptr) {
+        LOG_ERROR << "mysql_init failed";
+        return false;
+    }
+
     const MySqlConfig& config = AppConfig::Instance().mysql;
     MYSQL* p = mysql_real_connect(m_conn, config.host.c_str(), config.user.c_str(),
                                   config.password.c_str(), config.database.c_str(), config.port,
@@ -23,7 +30,6 @@ bool MySqlDB::Connect() {
     if (p != nullptr) {
         // 设置字符编码是utf8mb4
         mysql_set_character_set(m_conn, config.charset.c_str());
-        LOG_INFO << "connect mysql success!";
     } else {
         LOG_INFO << "connect mysql fail! err: " << mysql_error(m_conn);
     }
@@ -109,4 +115,127 @@ bool MySqlDB::UpdateStmt(const std::string& sql, const std::vector<SqlParam>& pa
 
     mysql_stmt_close(stmt);
     return true;
+}
+
+bool MySqlDB::QueryStmt(const std::string& sql, const std::vector<SqlParam>& params,
+                        std::vector<std::vector<std::string>>& rows) {
+    rows.clear();
+    if (m_conn == nullptr) {
+        LOG_ERROR << "mysql connection is null";
+        return false;
+    }
+
+    MYSQL_STMT* stmt = mysql_stmt_init(m_conn);
+    if (!stmt) {
+        LOG_ERROR << "mysql_stmt_init fail:" << mysql_error(m_conn);
+        return false;
+    }
+
+    auto closeStmt = [&stmt]() {
+        if (stmt != nullptr) {
+            mysql_stmt_close(stmt);
+            stmt = nullptr;
+        }
+    };
+
+    if (mysql_stmt_prepare(stmt, sql.c_str(), static_cast<unsigned long>(sql.size())) != 0) {
+        LOG_ERROR << "mysql_stmt_prepare fail:" << mysql_stmt_error(stmt);
+        closeStmt();
+        return false;
+    }
+    if (mysql_stmt_param_count(stmt) != params.size()) {
+        LOG_ERROR << "mysql statement parameter count mismatch";
+        closeStmt();
+        return false;
+    }
+
+    std::vector<MYSQL_BIND> paramBinds(params.size(), MYSQL_BIND{});
+    std::vector<unsigned long> paramLengths(params.size(), 0);
+    for (size_t i = 0; i < params.size(); ++i) {
+        if (params[i].valType == SqlParam::Type::INT64) {
+            paramBinds[i].buffer_type = MYSQL_TYPE_LONGLONG;
+            paramBinds[i].buffer      = const_cast<int64_t*>(&params[i].int64Val);
+            paramBinds[i].is_unsigned = false;
+        } else {
+            paramBinds[i].buffer_type   = MYSQL_TYPE_STRING;
+            paramBinds[i].buffer        = const_cast<char*>(params[i].strVal.data());
+            paramLengths[i]             = static_cast<unsigned long>(params[i].strVal.size());
+            paramBinds[i].buffer_length = paramLengths[i];
+            paramBinds[i].length        = &paramLengths[i];
+        }
+    }
+    if (!paramBinds.empty() && mysql_stmt_bind_param(stmt, paramBinds.data()) != 0) {
+        LOG_ERROR << "mysql_stmt_bind_param fail:" << mysql_stmt_error(stmt);
+        closeStmt();
+        return false;
+    }
+    if (mysql_stmt_execute(stmt) != 0) {
+        LOG_ERROR << "mysql_stmt_execute fail:" << mysql_stmt_error(stmt);
+        closeStmt();
+        return false;
+    }
+
+    MYSQL_RES* metadata = mysql_stmt_result_metadata(stmt);
+    if (metadata == nullptr) {
+        LOG_ERROR << "mysql statement did not return result metadata";
+        closeStmt();
+        return false;
+    }
+    const unsigned int columnCount = mysql_num_fields(metadata);
+    if (mysql_stmt_store_result(stmt) != 0) {
+        LOG_ERROR << "mysql_stmt_store_result fail:" << mysql_stmt_error(stmt);
+        mysql_free_result(metadata);
+        closeStmt();
+        return false;
+    }
+
+    std::vector<std::vector<char>> buffers(columnCount, std::vector<char>(1, '\0'));
+    std::vector<unsigned long> lengths(columnCount, 0);
+    std::unique_ptr<bool[]> nullFlags(new bool[columnCount]{});
+    std::vector<MYSQL_BIND> resultBinds(columnCount, MYSQL_BIND{});
+    for (unsigned int i = 0; i < columnCount; ++i) {
+        resultBinds[i].buffer_type   = MYSQL_TYPE_STRING;
+        resultBinds[i].buffer        = buffers[i].data();
+        resultBinds[i].buffer_length = 1;
+        resultBinds[i].length        = &lengths[i];
+        resultBinds[i].is_null       = &nullFlags[i];
+    }
+    if (columnCount > 0 && mysql_stmt_bind_result(stmt, resultBinds.data()) != 0) {
+        LOG_ERROR << "mysql_stmt_bind_result fail:" << mysql_stmt_error(stmt);
+        mysql_free_result(metadata);
+        closeStmt();
+        return false;
+    }
+
+    int fetchStatus = 0;
+    while ((fetchStatus = mysql_stmt_fetch(stmt)) == 0 || fetchStatus == MYSQL_DATA_TRUNCATED) {
+        std::vector<std::string> row(columnCount);
+        for (unsigned int i = 0; i < columnCount; ++i) {
+            if (nullFlags[i] || lengths[i] == 0) {
+                continue;
+            }
+            row[i].resize(lengths[i]);
+            MYSQL_BIND column{};
+            column.buffer_type   = MYSQL_TYPE_STRING;
+            column.buffer        = &row[i][0];
+            column.buffer_length = lengths[i];
+            column.length        = &lengths[i];
+            if (mysql_stmt_fetch_column(stmt, &column, i, 0) != 0) {
+                LOG_ERROR << "mysql_stmt_fetch_column fail:" << mysql_stmt_error(stmt);
+                mysql_free_result(metadata);
+                closeStmt();
+                rows.clear();
+                return false;
+            }
+        }
+        rows.emplace_back(std::move(row));
+    }
+    const bool ok = fetchStatus == MYSQL_NO_DATA;
+    if (!ok) {
+        LOG_ERROR << "mysql_stmt_fetch fail:" << mysql_stmt_error(stmt);
+        rows.clear();
+    }
+    mysql_free_result(metadata);
+    closeStmt();
+    return ok;
 }

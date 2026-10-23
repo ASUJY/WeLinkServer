@@ -240,8 +240,8 @@ TEST(MySqlIntegrationTest, UserStateUpdateCannotChangeAnotherUsersRowThroughInje
     ASSERT_TRUE(model.Insert(otherUser));
 
     const std::string injection = "offline' where userid = " + std::to_string(otherUserId) + " -- ";
-    EXPECT_TRUE(model.UpdateState(userId, injection));
-    EXPECT_EQ(model.QueryState(userId), injection);
+    EXPECT_FALSE(model.UpdateState(userId, injection));
+    EXPECT_EQ(model.QueryState(userId), "offline");
     EXPECT_EQ(model.QueryState(otherUserId), "online");
 }
 
