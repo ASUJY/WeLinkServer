@@ -38,14 +38,16 @@ public:
 
     void HandleRedisSubscribeMessage(int64_t userid, const std::string& msg);
 
-    bool SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response);
-
 private:
     Service();  // 构造函数私有化，禁止外部创建
+
+    bool SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response);
+    bool GetAuthenticatedUserId(const muduo::net::TcpConnectionPtr& conn, int64_t& userId);
 
 private:
     std::unordered_map<E_MSG_TYPE, MsgHandler> m_msgHandlerMap;
     std::unordered_map<int64_t, muduo::net::TcpConnectionPtr> m_userConnMap;
+    std::unordered_map<const muduo::net::TcpConnection*, int64_t> m_connUserMap;
 
     std::mutex m_connMtx;
 

@@ -65,25 +65,40 @@ MsgHandler Service::GetHandler(int msgType) {
 }
 
 void Service::ClientCloseException(const muduo::net::TcpConnectionPtr& conn) {
-    int64_t id = 0;
+    int64_t id = -1;
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
-        for (auto it = m_userConnMap.begin(); it != m_userConnMap.end(); ++it) {
-            if (it->second == conn) {
-                LOG_ERROR << "连接发送错误，断开";
-                id = it->first;
-                m_userConnMap.erase(it);
-                break;
+        const auto userIt = m_connUserMap.find(conn.get());
+        if (userIt != m_connUserMap.end()) {
+            const int64_t userId = userIt->second;
+            m_connUserMap.erase(userIt);
+
+            const auto connIt = m_userConnMap.find(userId);
+            if (connIt != m_userConnMap.end() && connIt->second == conn) {
+                LOG_INFO << "客户端连接断开";
+                id = userId;
+                m_userConnMap.erase(connIt);
             }
         }
     }
-    // 用户注销，相当于就是下线，在redis中取消订阅通道
-    m_redis.Unsubscribe(id);
 
-    // 更新用户的状态信息
     if (id != -1) {
-        m_userChangeModel.UpdateState(id, "offline");
+        m_redis.Unsubscribe(id);                       // 用户下线，在redis中取消订阅通道
+        m_userChangeModel.UpdateState(id, "offline");  // 更新用户的状态信息
     }
+}
+
+bool Service::GetAuthenticatedUserId(const muduo::net::TcpConnectionPtr& conn, int64_t& userId) {
+    if (!conn) {
+        return false;
+    }
+    std::lock_guard<std::mutex> locker(m_connMtx);
+    const auto it = m_connUserMap.find(conn.get());
+    if (it == m_connUserMap.end()) {
+        return false;
+    }
+    userId = it->second;
+    return true;
 }
 
 void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
@@ -112,9 +127,23 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
                 // response["errmsg"]  = "该账号已经登录，请重新输入新账号";
             } else {
                 // 登录成功，记录用户连接信息
+                bool alreadyConnected = false;
                 {
                     std::lock_guard<std::mutex> locker(m_connMtx);
-                    m_userConnMap.insert({user.GetUserId(), conn});
+                    const auto existing = m_userConnMap.find(user.GetUserId());
+                    if (existing != m_userConnMap.end() && existing->second != conn &&
+                        existing->second->connected()) {
+                        alreadyConnected = true;
+                    } else {
+                        m_userConnMap[user.GetUserId()] = conn;
+                        m_connUserMap[conn.get()]       = user.GetUserId();
+                    }
+                }
+
+                if (alreadyConnected) {
+                    response["data"]["errtype"] = E_ERR_TYPE::USER_ONLINE;
+                    SendJson(conn, response);
+                    return;
                 }
 
                 // id用户登录成功后，向redis订阅channel(id)
@@ -212,7 +241,11 @@ void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
                            muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
-    int64_t userid         = stoll(data["userid"]);
+    int64_t userid = -1;
+    if (!GetAuthenticatedUserId(conn, userid)) {
+        LOG_WARN << "Reject friend request from unauthenticated connection";
+        return;
+    }
     std::string username   = data["username"];
     int64_t friendid       = stoll(data["friendid"]);
     std::string friendname = data["friendname"];
@@ -246,7 +279,11 @@ void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
                            muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
     nlohmann::json response;
-    int64_t userid         = stoll(data["userid"]);
+    int64_t userid = -1;
+    if (!GetAuthenticatedUserId(conn, userid)) {
+        LOG_WARN << "Reject friend reply from unauthenticated connection";
+        return;
+    }
     std::string username   = data["username"];
     int64_t friendid       = stoll(data["friendid"]);
     std::string friendname = data["friendname"];
@@ -292,8 +329,17 @@ void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
                       muduo::Timestamp time) {
     std::map<std::string, std::string> data = js["data"];
 
+    int64_t senderId = -1;
+    if (!GetAuthenticatedUserId(conn, senderId)) {
+        LOG_WARN << "Reject chat from unauthenticated connection";
+        return;
+    }
+
     int64_t receiverid = stoll(data["receiverId"]);
     LOG_INFO << "Service::oneChat userid: " << receiverid;
+
+    // 客户端提供的发送方身份不可信，转发前用当前连接的登录身份覆盖。
+    js["data"]["senderId"] = std::to_string(senderId);
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
         auto it = m_userConnMap.find(receiverid);
