@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 
+#include "friendmodel.h"
 #include "mysqldb.h"
 #include "offlinemessagemodel.h"
 #include "userchangemodel.h"
@@ -43,6 +44,14 @@ void RemoveUser(int64_t userId) {
     }
 }
 
+void RemoveFriendRelations(int64_t userId) {
+    MySqlDB db;
+    if (db.Connect()) {
+        db.Update("delete from im_friend where userid=" + std::to_string(userId) +
+                  " or friendid=" + std::to_string(userId));
+    }
+}
+
 class UserCleanup {
 public:
     explicit UserCleanup(int64_t userId) : m_userId(userId) {}
@@ -50,6 +59,28 @@ public:
 
 private:
     int64_t m_userId;
+};
+
+class UserStateCleanup {
+public:
+    explicit UserStateCleanup(int64_t userId) : m_userId(userId) {}
+    ~UserStateCleanup() { RemoveUserState(m_userId); }
+
+private:
+    int64_t m_userId;
+};
+
+class FriendRelationsCleanup {
+public:
+    FriendRelationsCleanup(int64_t userA, int64_t userB) : m_userA(userA), m_userB(userB) {}
+    ~FriendRelationsCleanup() {
+        RemoveFriendRelations(m_userA);
+        RemoveFriendRelations(m_userB);
+    }
+
+private:
+    int64_t m_userA;
+    int64_t m_userB;
 };
 }  // namespace
 
@@ -100,6 +131,39 @@ TEST(MySqlIntegrationTest, UserStateCanBeInsertedQueriedAndUpdated) {
     EXPECT_TRUE(model.QueryState(userId).empty());
 }
 
+TEST(MySqlIntegrationTest, FriendRelationsAreScopedToTheRequestedUser) {
+    RequireIntegrationMySql();
+    const int64_t userA   = UniqueId();
+    const int64_t userB   = UniqueId();
+    const int64_t friendA = UniqueId();
+    const int64_t friendB = UniqueId();
+    RemoveFriendRelations(userA);
+    RemoveFriendRelations(userB);
+    FriendRelationsCleanup cleanup(userA, userB);
+    FriendModel model;
+    model.Insert(userA, friendA);
+    model.Insert(userB, friendB);
+
+    MySqlDB db;
+    ASSERT_TRUE(db.Connect());
+    MYSQL_RES* result =
+        db.Query("select count(*) from im_friend where userid=" + std::to_string(userA) +
+                 " and friendid=" + std::to_string(friendA));
+    ASSERT_NE(result, nullptr);
+    MYSQL_ROW row = mysql_fetch_row(result);
+    ASSERT_NE(row, nullptr);
+    EXPECT_EQ(std::string(row[0]), "1");
+    mysql_free_result(result);
+
+    result = db.Query("select count(*) from im_friend where userid=" + std::to_string(userA) +
+                      " and friendid=" + std::to_string(friendB));
+    ASSERT_NE(result, nullptr);
+    row = mysql_fetch_row(result);
+    ASSERT_NE(row, nullptr);
+    EXPECT_EQ(std::string(row[0]), "0");
+    mysql_free_result(result);
+}
+
 TEST(MySqlIntegrationTest, UserCanBeInsertedAndLookedUpByNicknameOrPhone) {
     RequireIntegrationMySql();
     const int64_t userId       = UniqueId();
@@ -139,6 +203,46 @@ TEST(MySqlIntegrationTest, UserCanBeInsertedAndLookedUpByNicknameOrPhone) {
     missing.SetUserName("welink_missing_" + std::to_string(userId));
     EXPECT_FALSE(model.QueryAccount(missing, E_ACCOUNT_TYPE::NICKNAME));
     EXPECT_TRUE(model.QueryUserInfo(missing.GetUserName(), E_ACCOUNT_TYPE::NICKNAME).empty());
+}
+
+TEST(MySqlIntegrationTest, UserInsertDoesNotInterpretSqlInjectionPayload) {
+    RequireIntegrationMySql();
+    const int64_t userId = UniqueId();
+    User user(userId);
+    const std::string nickname = "welink_' OR '1'='1_" + std::to_string(userId);
+    user.SetUserName(nickname);
+    user.SetUserPhone("9" + std::to_string(userId).substr(1));
+    user.SetPwd("password'); DELETE FROM im_user; --");
+    UserCleanup cleanup(userId);
+
+    ASSERT_TRUE(UserModel().Insert(user));
+    User found;
+    found.SetUserName(nickname);
+    ASSERT_TRUE(UserModel().QueryAccount(found, E_ACCOUNT_TYPE::NICKNAME));
+    EXPECT_EQ(found.GetUserId(), userId);
+    EXPECT_EQ(found.GetUserName(), nickname);
+    EXPECT_EQ(found.GetPwd(), "password'); DELETE FROM im_user; --");
+}
+
+TEST(MySqlIntegrationTest, UserStateUpdateCannotChangeAnotherUsersRowThroughInjection) {
+    RequireIntegrationMySql();
+    const int64_t userId      = UniqueId();
+    const int64_t otherUserId = UniqueId();
+    UserChangeModel model;
+    RemoveUserState(userId);
+    RemoveUserState(otherUserId);
+    UserStateCleanup cleanupUser(userId);
+    UserStateCleanup cleanupOther(otherUserId);
+    User user(userId);
+    User otherUser(otherUserId);
+    otherUser.SetUserState("online");
+    ASSERT_TRUE(model.Insert(user));
+    ASSERT_TRUE(model.Insert(otherUser));
+
+    const std::string injection = "offline' where userid = " + std::to_string(otherUserId) + " -- ";
+    EXPECT_TRUE(model.UpdateState(userId, injection));
+    EXPECT_EQ(model.QueryState(userId), injection);
+    EXPECT_EQ(model.QueryState(otherUserId), "online");
 }
 
 TEST(MySqlIntegrationTest, AccountLookupTreatsSqlSyntaxAsLiteralInput) {
@@ -194,4 +298,52 @@ TEST(MySqlIntegrationTest, ConcurrentOfflineMessageWritesRemainCompleteAndIsolat
         EXPECT_EQ(messages, expected);
         model.Remove(userId);
     }
+}
+
+TEST(MySqlIntegrationTest, ConcurrentOfflineMessageWritesForOneUserAreComplete) {
+    RequireIntegrationMySql();
+    constexpr int kWriterCount       = 8;
+    constexpr int kMessagesPerWriter = 25;
+    const int64_t userId             = UniqueId();
+    OfflineMsgModel model;
+    model.Remove(userId);
+    std::vector<std::thread> writers;
+    for (int writer = 0; writer < kWriterCount; ++writer) {
+        writers.emplace_back([userId, writer] {
+            OfflineMsgModel threadModel;
+            for (int message = 0; message < kMessagesPerWriter; ++message) {
+                threadModel.Insert(userId, std::to_string(writer) + ":" + std::to_string(message));
+            }
+        });
+    }
+    for (auto& writer : writers) writer.join();
+
+    auto messages = model.Query(userId);
+    std::sort(messages.begin(), messages.end());
+    std::vector<std::string> expected;
+    for (int writer = 0; writer < kWriterCount; ++writer) {
+        for (int message = 0; message < kMessagesPerWriter; ++message) {
+            expected.push_back(std::to_string(writer) + ":" + std::to_string(message));
+        }
+    }
+    std::sort(expected.begin(), expected.end());
+    EXPECT_EQ(messages, expected);
+    model.Remove(userId);
+}
+
+TEST(MySqlIntegrationTest, OfflineMessagePayloadCannotInjectSqlOrChangeOtherUsersRows) {
+    RequireIntegrationMySql();
+    const int64_t userA = UniqueId();
+    const int64_t userB = UniqueId();
+    OfflineMsgModel model;
+    const std::string payload = "x'); DELETE FROM offlinemessage; --";
+    model.Remove(userA);
+    model.Remove(userB);
+    model.Insert(userA, payload);
+    model.Insert(userB, "keep this row");
+
+    EXPECT_EQ(model.Query(userA), (std::vector<std::string>{payload}));
+    EXPECT_EQ(model.Query(userB), (std::vector<std::string>{"keep this row"}));
+    model.Remove(userA);
+    model.Remove(userB);
 }
