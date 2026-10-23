@@ -22,8 +22,9 @@ std::string ConfigPath() {
 }
 }  // namespace
 
-AppConfig::AppConfig() {
-    const std::string path = ConfigPath();
+AppConfig::AppConfig() : AppConfig(ConfigPath()) {}
+
+AppConfig::AppConfig(const std::string& path) {
     std::ifstream file(path);
     if (!file) {
         throw std::runtime_error("cannot open configuration file '" + path +
@@ -56,3 +57,5 @@ const AppConfig& AppConfig::Instance() {
     static const AppConfig config;
     return config;
 }
+
+AppConfig AppConfig::LoadFromFile(const std::string& path) { return AppConfig(path); }

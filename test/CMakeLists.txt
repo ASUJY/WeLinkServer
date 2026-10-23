@@ -1,10 +1,9 @@
 aux_source_directory(./network NETWORK_TEST_SRC_LIST)
 aux_source_directory(./mysql MYSQL_TEST_SRC_LIST)
-
-set (TEST_SRC snowflake_test.cpp redis_integration_test.cpp)
+aux_source_directory(./ TEST_SRC_LIST)
 
 add_executable(run_all_test 
-    ${TEST_SRC} 
+    ${TEST_SRC_LIST} 
     ${NETWORK_TEST_SRC_LIST}
     ${MYSQL_TEST_SRC_LIST}
 )
