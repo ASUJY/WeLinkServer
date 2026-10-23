@@ -80,6 +80,14 @@ public:
 
     const muduo::net::TcpConnectionPtr& Connection() const { return m_conn; }
 
+    bool HasReadableData(int timeoutMs) const {
+        pollfd descriptor{};
+        descriptor.fd     = m_peerFd;
+        descriptor.events = POLLIN;
+        const int ready   = poll(&descriptor, 1, timeoutMs);
+        return ready > 0 && (descriptor.revents & POLLIN) != 0;
+    }
+
     nlohmann::json ReadJson() const {
         uint32_t networkLength = 0;
         if (!ReadExact(m_peerFd, reinterpret_cast<char*>(&networkLength), sizeof(networkLength))) {
@@ -215,6 +223,96 @@ TEST_F(ServiceIntegrationTest, RegistrationLoginAndOfflineMessages) {
     const auto duplicateLogin = Login(*m_second, username, "service-test-password");
     EXPECT_EQ(duplicateLogin.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::USER_ONLINE));
+}
+
+TEST_F(ServiceIntegrationTest, ConcurrentLoginAllowsOnlyOneConnection) {
+    const auto registration = Register(*m_first, "service_concurrent_login");
+    ASSERT_EQ(registration.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const auto username = registration.at("data").at("username").get<std::string>();
+    const auto userId   = registration.at("data").at("userid").get<int64_t>();
+
+    std::mutex startMutex;
+    std::condition_variable startCondition;
+    int ready           = 0;
+    bool start          = false;
+    auto loginAtBarrier = [&](TestConnection& connection) {
+        {
+            std::unique_lock<std::mutex> lock(startMutex);
+            ++ready;
+            startCondition.notify_all();
+            startCondition.wait(lock, [&] { return start; });
+        }
+        return Login(connection, username, "service-test-password");
+    };
+
+    auto firstResult  = std::async(std::launch::async, loginAtBarrier, std::ref(*m_first));
+    auto secondResult = std::async(std::launch::async, loginAtBarrier, std::ref(*m_second));
+    bool bothReady    = false;
+    {
+        std::unique_lock<std::mutex> lock(startMutex);
+        bothReady =
+            startCondition.wait_for(lock, std::chrono::seconds(2), [&] { return ready == 2; });
+        start = true;
+    }
+    startCondition.notify_all();
+    ASSERT_TRUE(bothReady);
+
+    const auto first      = firstResult.get();
+    const auto second     = secondResult.get();
+    const int firstError  = first.at("data").at("errtype").get<int>();
+    const int secondError = second.at("data").at("errtype").get<int>();
+    const int successes   = (firstError == static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS)) +
+                            (secondError == static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    EXPECT_EQ(successes, 1);
+    EXPECT_TRUE(firstError == static_cast<int>(E_ERR_TYPE::USER_ONLINE) ||
+                secondError == static_cast<int>(E_ERR_TYPE::USER_ONLINE));
+    EXPECT_EQ(UserChangeModel().QueryState(userId), "online");
+    if (firstError == static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS)) {
+        TrackLogin(userId, *m_first);
+    } else if (secondError == static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS)) {
+        TrackLogin(userId, *m_second);
+    }
+}
+
+TEST_F(ServiceIntegrationTest, ClosingLoggedInConnectionMarksUserOffline) {
+    const auto registration = Register(*m_first, "service_disconnect");
+    ASSERT_EQ(registration.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const auto userId   = registration.at("data").at("userid").get<int64_t>();
+    const auto username = registration.at("data").at("username").get<std::string>();
+
+    const auto login = Login(*m_first, username, "service-test-password");
+    ASSERT_EQ(login.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(userId, *m_first);
+    ASSERT_EQ(UserChangeModel().QueryState(userId), "online");
+
+    m_service->ClientCloseException(m_first->Connection());
+    EXPECT_EQ(UserChangeModel().QueryState(userId), "offline");
+}
+
+TEST_F(ServiceIntegrationTest, UnauthenticatedConnectionCannotSpoofFriendRequestSender) {
+    const auto receiver = Register(*m_second, "service_spoof_receiver");
+    ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const auto receiverId   = receiver.at("data").at("userid").get<int64_t>();
+    const auto receiverName = receiver.at("data").at("username").get<std::string>();
+    const auto login        = Login(*m_second, receiverName, "service-test-password");
+    ASSERT_EQ(login.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(receiverId, *m_second);
+
+    nlohmann::json forged = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
+                             {"data",
+                              {{"userid", "123456789"},
+                               {"username", "forged"},
+                               {"friendid", std::to_string(receiverId)},
+                               {"friendname", receiverName}}}};
+    Call(m_first->Connection(), forged);  // m_first has not authenticated.
+
+    EXPECT_FALSE(m_second->HasReadableData(250));
+    EXPECT_TRUE(OfflineMsgModel().Query(receiverId).empty());
 }
 
 TEST_F(ServiceIntegrationTest, FriendRequestsAndChatsRouteToOnlineOrOfflineUsers) {
