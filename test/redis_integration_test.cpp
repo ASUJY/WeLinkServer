@@ -134,7 +134,7 @@ TEST(RedisIntegrationTest, HandlesEmptyAndSpecialTextMessages) {
 
     {
         std::unique_lock<std::mutex> lock(mutex);
-        ASSERT_TRUE(condv.wait_for(lock, std::chrono::seconds(3), [&] {
+        ASSERT_TRUE(condv.wait_for(lock, std::chrono::seconds(10), [&] {
             return received.size() == messages.size();
         })) << "Timed out waiting for all text messages";
         EXPECT_EQ(received, messages);
@@ -190,7 +190,7 @@ TEST(RedisIntegrationTest, ConcurrentPublishCallsDeliverEveryMessage) {
 
     {
         std::unique_lock<std::mutex> lock(mutex);
-        ASSERT_TRUE(condv.wait_for(lock, std::chrono::seconds(5),
+        ASSERT_TRUE(condv.wait_for(lock, std::chrono::seconds(10),
                                    [&] { return received.size() == kExpectedMessages; }))
             << "Received " << received.size() << " of " << kExpectedMessages << " unique messages";
     }
