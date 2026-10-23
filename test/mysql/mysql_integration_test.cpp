@@ -9,6 +9,7 @@
 #include "mysqldb.h"
 #include "offlinemessagemodel.h"
 #include "userchangemodel.h"
+#include "usermodel.h"
 
 namespace {
 bool IntegrationEnabled() {
@@ -33,6 +34,22 @@ void RemoveUserState(int64_t userId) {
         db.Update("delete from im_userchange where userid=" + std::to_string(userId));
     }
 }
+
+void RemoveUser(int64_t userId) {
+    MySqlDB db;
+    if (db.Connect()) {
+        db.Update("delete from im_user where uid=" + std::to_string(userId));
+    }
+}
+
+class UserCleanup {
+public:
+    explicit UserCleanup(int64_t userId) : m_userId(userId) {}
+    ~UserCleanup() { RemoveUser(m_userId); }
+
+private:
+    int64_t m_userId;
+};
 }  // namespace
 
 TEST(MySqlIntegrationTest, OfflineMessagesAreIsolatedAndCanBeRemoved) {
@@ -80,4 +97,45 @@ TEST(MySqlIntegrationTest, UserStateCanBeInsertedQueriedAndUpdated) {
 
     RemoveUserState(userId);
     EXPECT_TRUE(model.QueryState(userId).empty());
+}
+
+TEST(MySqlIntegrationTest, UserCanBeInsertedAndLookedUpByNicknameOrPhone) {
+    RequireIntegrationMySql();
+    const int64_t userId       = UniqueId();
+    const std::string nickname = "welink_test_" + std::to_string(userId);
+    const std::string phone    = "9" + std::to_string(userId).substr(1);
+    UserModel model;
+    User user(userId);
+    user.SetUserName(nickname);
+    user.SetUserPhone(phone);
+    user.SetPwd("test-password");
+
+    RemoveUser(userId);
+    UserCleanup cleanup(userId);
+    ASSERT_TRUE(model.Insert(user));
+
+    User byNickname;
+    byNickname.SetUserName(nickname);
+    ASSERT_TRUE(model.QueryAccount(byNickname, E_ACCOUNT_TYPE::NICKNAME));
+    EXPECT_EQ(byNickname.GetUserId(), userId);
+    EXPECT_EQ(byNickname.GetUserName(), nickname);
+    EXPECT_EQ(byNickname.GetUserPhone(), phone);
+    EXPECT_EQ(byNickname.GetPwd(), "test-password");
+
+    User byPhone;
+    byPhone.SetUserName(phone);
+    ASSERT_TRUE(model.QueryAccount(byPhone, E_ACCOUNT_TYPE::PHONE));
+    EXPECT_EQ(byPhone.GetUserId(), userId);
+    EXPECT_EQ(byPhone.GetUserName(), nickname);
+
+    const auto info = model.QueryUserInfo(nickname, E_ACCOUNT_TYPE::NICKNAME);
+    ASSERT_EQ(info.size(), 3u);
+    EXPECT_EQ(info[0], std::to_string(userId));
+    EXPECT_EQ(info[1], phone);
+    EXPECT_EQ(info[2], nickname);
+
+    User missing;
+    missing.SetUserName("welink_missing_" + std::to_string(userId));
+    EXPECT_FALSE(model.QueryAccount(missing, E_ACCOUNT_TYPE::NICKNAME));
+    EXPECT_TRUE(model.QueryUserInfo(missing.GetUserName(), E_ACCOUNT_TYPE::NICKNAME).empty());
 }
