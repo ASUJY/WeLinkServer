@@ -69,6 +69,36 @@ TEST(ProtocolTest, EncodeRejectsEmptyAndOversizedBodies) {
     EXPECT_FALSE(protocol::EncodeFrame(std::string(1024 * 1024 + 1, 'x'), frame));
 }
 
+TEST(ProtocolTest, EncodesAndDecodesMaximumSizedBody) {
+    const std::string body(1024 * 1024, 'x');
+    std::string frame;
+    ASSERT_TRUE(protocol::EncodeFrame(body, frame));
+
+    std::vector<std::string> bodies;
+    size_t consumed = 0;
+    EXPECT_EQ(protocol::DecodeFrames(frame.data(), frame.size(), bodies, consumed),
+              protocol::DecodeStatus::OK);
+    ASSERT_EQ(bodies.size(), 1u);
+    EXPECT_EQ(bodies.front(), body);
+    EXPECT_EQ(consumed, frame.size());
+}
+
+TEST(ProtocolTest, EmptyInputIsAnEmptyCompleteBuffer) {
+    std::vector<std::string> bodies;
+    size_t consumed = 99;
+
+    EXPECT_EQ(protocol::DecodeFrames(nullptr, 0, bodies, consumed), protocol::DecodeStatus::OK);
+    EXPECT_TRUE(bodies.empty());
+    EXPECT_EQ(consumed, 0u);
+}
+
+TEST(ProtocolTest, RejectsNonIntegerMessageTypes) {
+    nlohmann::json message;
+    EXPECT_FALSE(protocol::ParseJsonMessage(R"({"msgtype":1.5})", message));
+    EXPECT_FALSE(protocol::ParseJsonMessage(R"({"msgtype":null})", message));
+    EXPECT_FALSE(protocol::ParseJsonMessage(R"(null)", message));
+}
+
 TEST(ProtocolTest, EncodesLengthInNetworkByteOrder) {
     const std::string body  = "{}";
     const std::string frame = Frame(body);
