@@ -50,7 +50,9 @@ bool UserModel::QueryAccount(User& user, E_ACCOUNT_TYPE type) {
                 // }
             }
         }
-        mysql_free_result(res);
+        if (res != nullptr) {
+            mysql_free_result(res);
+        }
     }
     return false;
 }
@@ -78,8 +80,8 @@ std::vector<std::string> UserModel::QueryUserInfo(std::string username, E_ACCOUN
                 resVec.emplace_back(row[0]);
                 resVec.emplace_back(row[2]);
                 resVec.emplace_back(row[3]);
-                mysql_free_result(res);
             }
+            mysql_free_result(res);
         }
     }
     return resVec;
