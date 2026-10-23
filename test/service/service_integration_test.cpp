@@ -12,6 +12,8 @@
 #include "service.h"
 
 namespace {
+constexpr int messageMaxLen = 1024 * 1024;
+
 bool IntegrationEnabled() {
     const char* enabled = std::getenv("WE_LINK_SERVICE_INTEGRATION");
     return enabled != nullptr && std::string(enabled) == "1";
@@ -84,7 +86,7 @@ public:
             throw std::runtime_error("timed out waiting for service response header");
         }
         const uint32_t length = ntohl(networkLength);
-        if (length == 0 || length > 1024 * 1024) {
+        if (length == 0 || length > messageMaxLen) {
             throw std::runtime_error("service returned an invalid frame length");
         }
         std::string body(length, '\0');

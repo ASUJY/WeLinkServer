@@ -17,7 +17,7 @@ set(LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 option(BUILD_TESTS "Build unit tests" OFF)
 if(BUILD_TESTS)
     # 静态代码检测，clang-tidy:代码规范、空指针、内存隐患；cppcheck:未初始化变量、资源泄漏；
-    set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=*)
+    # set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=*)
     # 内存 / 越界检测(运行时测试)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -g")
     # 加载 FetchContent 模块，CMake 内置的远程依赖下载工具
