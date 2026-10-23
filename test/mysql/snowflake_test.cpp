@@ -19,6 +19,15 @@ TEST(SnowflakeTest, WorkerIdOverflowThrow) {
     ASSERT_THROW(SnowflakeGenerator gen(32, 1), std::invalid_argument);
 }
 
+TEST(SnowflakeTest, DatacenterIdOverflowThrow) {
+    ASSERT_THROW(SnowflakeGenerator gen(1, 32), std::invalid_argument);
+}
+
+TEST(SnowflakeTest, AcceptsMaximumWorkerAndDatacenterIds) {
+    SnowflakeGenerator gen(31, 31);
+    EXPECT_GT(gen.NextId(), 0);
+}
+
 // 多线程并发生成无重复ID
 TEST(SnowflakeTest, MultiThreadNoDuplicate) {
     SnowflakeGenerator gen(1, 1);
