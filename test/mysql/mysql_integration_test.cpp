@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "mysqldb.h"
@@ -138,4 +139,59 @@ TEST(MySqlIntegrationTest, UserCanBeInsertedAndLookedUpByNicknameOrPhone) {
     missing.SetUserName("welink_missing_" + std::to_string(userId));
     EXPECT_FALSE(model.QueryAccount(missing, E_ACCOUNT_TYPE::NICKNAME));
     EXPECT_TRUE(model.QueryUserInfo(missing.GetUserName(), E_ACCOUNT_TYPE::NICKNAME).empty());
+}
+
+TEST(MySqlIntegrationTest, AccountLookupTreatsSqlSyntaxAsLiteralInput) {
+    RequireIntegrationMySql();
+
+    const int64_t sentinelId = UniqueId();
+    User sentinel(sentinelId);
+    sentinel.SetUserName("welink_sentinel_" + std::to_string(sentinelId));
+    sentinel.SetUserPhone("9" + std::to_string(sentinelId).substr(1));
+    sentinel.SetPwd("test-password");
+    UserCleanup cleanup(sentinelId);
+    ASSERT_TRUE(UserModel().Insert(sentinel));
+
+    User injected;
+    // This must be treated as a nickname, not as part of the WHERE clause.
+    injected.SetUserName("welink_missing_" + std::to_string(sentinelId) + "' OR '1'='1' -- ");
+    EXPECT_FALSE(UserModel().QueryAccount(injected, E_ACCOUNT_TYPE::NICKNAME));
+    EXPECT_TRUE(
+        UserModel().QueryUserInfo(injected.GetUserName(), E_ACCOUNT_TYPE::NICKNAME).empty());
+}
+
+TEST(MySqlIntegrationTest, ConcurrentOfflineMessageWritesRemainCompleteAndIsolated) {
+    RequireIntegrationMySql();
+    constexpr int kUserCount       = 4;
+    constexpr int kMessagesPerUser = 20;
+    const int64_t baseId           = UniqueId() + 100000;
+    OfflineMsgModel model;
+    std::vector<std::thread> writers;
+
+    for (int user = 0; user < kUserCount; ++user) {
+        const int64_t userId = baseId + user;
+        model.Remove(userId);
+        writers.emplace_back([userId, user] {
+            OfflineMsgModel threadModel;
+            for (int message = 0; message < kMessagesPerUser; ++message) {
+                threadModel.Insert(userId, std::to_string(user) + ":" + std::to_string(message));
+            }
+        });
+    }
+    for (auto& writer : writers) {
+        writer.join();
+    }
+
+    for (int user = 0; user < kUserCount; ++user) {
+        const int64_t userId = baseId + user;
+        auto messages        = model.Query(userId);
+        std::sort(messages.begin(), messages.end());
+        std::vector<std::string> expected;
+        for (int message = 0; message < kMessagesPerUser; ++message) {
+            expected.push_back(std::to_string(user) + ":" + std::to_string(message));
+        }
+        std::sort(expected.begin(), expected.end());
+        EXPECT_EQ(messages, expected);
+        model.Remove(userId);
+    }
 }
