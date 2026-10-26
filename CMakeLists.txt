@@ -13,8 +13,14 @@ set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -g)
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 set(LIBRARY_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/lib)
 
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/scripts/
+    DESTINATION ${PROJECT_SOURCE_DIR}/bin
+)
+
 # 可选：开关单元测试
 option(BUILD_TESTS "Build unit tests" OFF)
+# 可选：开关压力测试
+option(BUILD_LOADGEN "Build the TCP register/login load generator" OFF)
 if(BUILD_TESTS)
     # 静态代码检测，clang-tidy:代码规范、空指针、内存隐患；cppcheck:未初始化变量、资源泄漏；
     # set(CMAKE_CXX_CLANG_TIDY clang-tidy -checks=*)
@@ -43,6 +49,11 @@ include_directories(${PROJECT_SOURCE_DIR}/thirdparty)
 
 # 加载子目录
 add_subdirectory(src)
+
+if(BUILD_LOADGEN)
+    add_executable(loadTest loadtest/loadtest.cpp)
+    target_link_libraries(loadTest pthread)
+endif()
 
 if(BUILD_TESTS)
     # 收集全部业务源文件
