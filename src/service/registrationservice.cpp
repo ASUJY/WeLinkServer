@@ -40,7 +40,7 @@ bool RegistrationService::ValidateRegistrationInfo(const Json& registerInfo, Use
 
     const auto& data = registerInfo.at("data");
     RegisterRequestInfo result;
-    if (!ReadRequiredString(registerInfo, "phone", 32, result.phone) ||
+    if (!ReadRequiredString(data, "phone", 32, result.phone) ||
         !ReadRequiredString(data, "username", 64, result.username) ||
         !ReadRequiredString(data, "password", 128, result.password)) {
         return false;
