@@ -16,6 +16,7 @@ enum class E_MSG_TYPE : int {
 
 enum class E_ERR_TYPE : int {
     UNKNOWN = 0,
+    REG_MSG_ACK_INVALID_INPUT,
     REG_MSG_ACK_SUCCESS,
     USER_EXIT,
     LOGIN_MSG_ACK_SUCCESS,

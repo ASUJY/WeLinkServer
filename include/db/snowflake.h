@@ -5,7 +5,7 @@
 
 class SnowflakeGenerator {
 public:
-    SnowflakeGenerator(uint32_t workerid, uint32_t datacenerid);
+    explicit SnowflakeGenerator(uint32_t workerid, uint32_t datacenerid);
     int64_t NextId();
 
     SnowflakeGenerator(const SnowflakeGenerator&)            = delete;

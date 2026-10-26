@@ -11,6 +11,7 @@
 #include "json.hpp"
 #include "offlinemessagemodel.h"
 #include "redis.h"
+#include "registrationservice.h"
 #include "userchangemodel.h"
 #include "usermodel.h"
 
@@ -59,6 +60,8 @@ private:
 
     // redis操作对象
     Redis m_redis;
+
+    RegistrationService m_registrationService;
 };
 
 #endif

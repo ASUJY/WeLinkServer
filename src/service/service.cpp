@@ -15,7 +15,7 @@ Service* Service::instance() {
     return &service;
 }
 
-Service::Service() {
+Service::Service() : m_registrationService(m_userModel, m_userChangeModel) {
     // m_msgHandlerMap.insert(
     //     {E_MSG_TYPE::LOGIN_MSG, std::bind(&Service::Login,
     //     this, std::placeholders::_1, std::placeholders::_2,
@@ -185,36 +185,7 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
 
 void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                        muduo::Timestamp time) {
-    std::map<std::string, std::string> data = js["data"];
-
-    User user;
-    user.SetUserPhone(data["phone"]);
-    user.SetUserName(data["username"]);
-    user.SetPwd(data["password"]);
-    user.SetUserAvatar(data["avatar"]);
-
-    uint32_t workerId     = 1;
-    uint32_t datacenterId = 1;
-    SnowflakeGenerator gen(workerId, datacenterId);
-    user.SetUserId(gen.NextId());
-
-    bool state = m_userModel.Insert(user);
-    m_userChangeModel.Insert(user);
-    nlohmann::json response;
-    if (state) {
-        // register success
-        LOG_INFO << "register success!!!!";
-        response["msgtype"]          = E_MSG_TYPE::REG_MSG_ACK;
-        response["data"]["errtype"]  = E_ERR_TYPE::REG_MSG_ACK_SUCCESS;
-        response["data"]["userid"]   = user.GetUserId();
-        response["data"]["username"] = user.GetUserName();
-        response["data"]["phone"]    = user.GetUserPhone();
-        response["data"]["avator"]   = user.GetUserAvatar();
-    } else {
-        // register failed
-        response["msgtype"]         = E_MSG_TYPE::REG_MSG_ACK;
-        response["data"]["errtype"] = E_ERR_TYPE::USER_EXIT;
-    }
+    nlohmann::json response = m_registrationService.Register(js);
     SendJson(conn, response);
 }
 
