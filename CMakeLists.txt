@@ -40,6 +40,7 @@ endif()
 # 配置头文件的搜索路径
 include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_SOURCE_DIR}/include/network)
+include_directories(${PROJECT_SOURCE_DIR}/include/pool)
 include_directories(${PROJECT_SOURCE_DIR}/include/service)
 include_directories(${PROJECT_SOURCE_DIR}/include/model)
 include_directories(${PROJECT_SOURCE_DIR}/include/db)
