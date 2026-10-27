@@ -9,6 +9,7 @@
 #include "common.h"
 #include "friendmodel.h"
 #include "json.hpp"
+#include "loginservice.h"
 #include "offlinemessagemodel.h"
 #include "redis.h"
 #include "registrationservice.h"
@@ -46,11 +47,15 @@ private:
 
     bool SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response);
     bool GetAuthenticatedUserId(const muduo::net::TcpConnectionPtr& conn, int64_t& userId);
+    std::shared_ptr<std::mutex> GetUserSessionMutex(int64_t userId);
 
 private:
     std::unordered_map<E_MSG_TYPE, MsgHandler> m_msgHandlerMap;
     std::unordered_map<int64_t, muduo::net::TcpConnectionPtr> m_userConnMap;
     std::unordered_map<const muduo::net::TcpConnection*, int64_t> m_connUserMap;
+
+    // “用户 ID → 该用户专属互斥锁”的映射，用来串行化同一用户的登录和断连处理。
+    std::unordered_map<int64_t, std::shared_ptr<std::mutex>> m_userSessionMutexes;
 
     std::mutex m_connMtx;
 
@@ -64,6 +69,7 @@ private:
     Redis m_redis;
 
     RegistrationService m_registrationService;
+    LoginService m_loginService;
 
     std::unique_ptr<ThreadPool> m_threadPool;
 };

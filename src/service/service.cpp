@@ -17,7 +17,9 @@ Service* Service::instance() {
 }
 
 Service::Service()
-    : m_registrationService(m_userModel, m_userChangeModel), m_threadPool(new ThreadPool(4, 1000)) {
+    : m_registrationService(m_userModel, m_userChangeModel),
+      m_threadPool(new ThreadPool(4, 1000)),
+      m_loginService(m_userModel, m_userChangeModel, m_offlineMsgModel) {
     // m_msgHandlerMap.insert(
     //     {E_MSG_TYPE::LOGIN_MSG, std::bind(&Service::Login,
     //     this, std::placeholders::_1, std::placeholders::_2,
@@ -67,26 +69,45 @@ MsgHandler Service::GetHandler(int msgType) {
 }
 
 void Service::ClientCloseException(const muduo::net::TcpConnectionPtr& conn) {
-    int64_t id = -1;
+    if (!conn) {
+        return;
+    }
+
+    int64_t userId = -1;
     {
         std::lock_guard<std::mutex> locker(m_connMtx);
         const auto userIt = m_connUserMap.find(conn.get());
         if (userIt != m_connUserMap.end()) {
-            const int64_t userId = userIt->second;
-            m_connUserMap.erase(userIt);
-
-            const auto connIt = m_userConnMap.find(userId);
-            if (connIt != m_userConnMap.end() && connIt->second == conn) {
-                LOG_INFO << "客户端连接断开";
-                id = userId;
-                m_userConnMap.erase(connIt);
-            }
+            userId = userIt->second;
         }
     }
 
-    if (id != -1) {
-        m_redis.Unsubscribe(id);                       // 用户下线，在redis中取消订阅通道
-        m_userChangeModel.UpdateState(id, "offline");  // 更新用户的状态信息
+    if (userId == -1) {
+        return;
+    }
+
+    const auto sessionMutex = GetUserSessionMutex(userId);
+    std::lock_guard<std::mutex> sessionLocker(*sessionMutex);
+
+    bool wasCurrentConnection = false;
+    {
+        std::lock_guard<std::mutex> locker(m_connMtx);
+        const auto userIt = m_connUserMap.find(conn.get());
+        if (userIt != m_connUserMap.end() && userIt->second == userId) {
+            m_connUserMap.erase(userIt);
+        }
+
+        const auto connIt = m_userConnMap.find(userId);
+        if (connIt != m_userConnMap.end() && connIt->second == conn) {
+            LOG_INFO << "客户端连接断开";
+            m_userConnMap.erase(connIt);
+            wasCurrentConnection = true;
+        }
+    }
+
+    if (wasCurrentConnection) {
+        m_redis.Unsubscribe(userId);                       // 用户下线，在redis中取消订阅通道
+        m_userChangeModel.UpdateState(userId, "offline");  // 更新用户的状态信息
     }
 }
 
@@ -103,86 +124,75 @@ bool Service::GetAuthenticatedUserId(const muduo::net::TcpConnectionPtr& conn, i
     return true;
 }
 
+std::shared_ptr<std::mutex> Service::GetUserSessionMutex(int64_t userId) {
+    std::lock_guard<std::mutex> locker(m_connMtx);
+    auto& sessionMutex = m_userSessionMutexes[userId];
+    if (!sessionMutex) {
+        sessionMutex = std::make_shared<std::mutex>();
+    }
+    return sessionMutex;
+}
+
 void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                     muduo::Timestamp time) {
-    std::unordered_map<std::string, std::string> data = js["data"];
-    std::cout << "Login: " << std::endl;
-    // 这里应该根据客户端传过来的用户名，或者账号，或者手机号来进行登录
-    User user;
-    user.SetUserName(data["username"]);
-    user.SetPwd(data["password"]);
+    if (!conn) {
+        LOG_WARN << "Reject login request without a connection";
+        return;
+    }
 
-    bool res1 =
-        m_userModel.QueryAccount(user, static_cast<E_ACCOUNT_TYPE>(stoi(data["accountType"])));
+    nlohmann::json loginInfo = js;
+    bool accepted            = false;
+    m_threadPool->AppendQueue(accepted, [this, conn, loginInfo = std::move(loginInfo)]() {
+        nlohmann::json response;
 
-    nlohmann::json response;
-    response["msgtype"] = E_MSG_TYPE::LOGIN_MSG_ACK;
-    if (res1) {
-        if (user.GetPwd() == data["password"]) {
-            auto state = m_userChangeModel.QueryState(user.GetUserId());
-            if (state.empty()) {
-                response["data"]["errtype"] = E_ERR_TYPE::USER_NO_REGISTER;
-            } else if (state == "online") {
-                // 该用户已经登录，不允许重复登录
-                response["data"]["errtype"] = E_ERR_TYPE::USER_ONLINE;
-                // response["errno"]   = 2;
-                // response["errmsg"]  = "该账号已经登录，请重新输入新账号";
-            } else {
-                // 登录成功，记录用户连接信息
-                bool alreadyConnected = false;
+        try {
+            response = m_loginService.Login(loginInfo, [this, &conn](User& user) {
+                const int64_t userId    = user.GetUserId();
+                const auto sessionMutex = GetUserSessionMutex(userId);
+                std::lock_guard<std::mutex> sessionLocker(*sessionMutex);
+
                 {
                     std::lock_guard<std::mutex> locker(m_connMtx);
-                    const auto existing = m_userConnMap.find(user.GetUserId());
+                    if (!conn->connected()) {
+                        return false;
+                    }
+
+                    const auto existing = m_userConnMap.find(userId);
                     if (existing != m_userConnMap.end() && existing->second != conn &&
                         existing->second->connected()) {
-                        alreadyConnected = true;
-                    } else {
-                        m_userConnMap[user.GetUserId()] = conn;
-                        m_connUserMap[conn.get()]       = user.GetUserId();
+                        return false;
                     }
+
+                    m_userConnMap[userId]     = conn;
+                    m_connUserMap[conn.get()] = userId;
                 }
-
-                if (alreadyConnected) {
-                    response["data"]["errtype"] = E_ERR_TYPE::USER_ONLINE;
-                    SendJson(conn, response);
-                    return;
-                }
-
-                // id用户登录成功后，向redis订阅channel(id)
-                m_redis.Subscribe(user.GetUserId());
-
                 // 登录成功，更新用户状态信息 state offline=>online
+                // 向redis订阅channel(id)
                 user.SetUserState("online");
                 m_userChangeModel.UpdateState(user);
-
-                LOG_INFO << "login success!!!!";
-                response["data"]["errtype"] = E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS;
-                LOG_INFO << user.GetUserName() << " ddd " << user.GetUserId();
-                response["data"]["userid"]   = user.GetUserId();
-                response["data"]["username"] = user.GetUserName();
-                response["data"]["phone"]    = user.GetUserPhone();
-                response["data"]["avator"]   = user.GetUserAvatar();
-
-                // 查询该用户是否有离线消息
-                vector<string> vec = m_offlineMsgModel.Query(user.GetUserId());
-                if (!vec.empty()) {
-                    response["offlinemsg"] = vec;
-                    m_offlineMsgModel.Remove(user.GetUserId());
-                }
-
-                // 查询该用户的好友信息并返回，这里可以优化一下，看看是否能获取用户登录设备的信息
-                // 如果是常用登录设备就不需要返回好友信息了
-            }
-        } else {
-            LOG_INFO << "login failed!!!!";
+                m_redis.Subscribe(userId);
+                return true;
+            });
+        } catch (const std::exception& e) {
+            LOG_ERROR << "Login processing failed: " << e.what();
+            response["msgtype"]         = E_MSG_TYPE::LOGIN_MSG_ACK;
+            response["data"]["errtype"] = E_ERR_TYPE::ACCOUNT_ERROR;
+        } catch (...) {
+            LOG_ERROR << "Login processing failed with an unknown exception";
+            response["msgtype"]         = E_MSG_TYPE::LOGIN_MSG_ACK;
             response["data"]["errtype"] = E_ERR_TYPE::ACCOUNT_ERROR;
         }
-    } else {
-        LOG_INFO << "login failed!!!!";
 
-        response["data"]["errtype"] = E_ERR_TYPE::USER_NO_REGISTER;
+        conn->getLoop()->queueInLoop(
+            [this, conn, response = std::move(response)]() { SendJson(conn, response); });
+    });
+
+    if (!accepted) {
+        nlohmann::json response;
+        response["msgtype"]         = E_MSG_TYPE::LOGIN_MSG_ACK;
+        response["data"]["errtype"] = E_ERR_TYPE::SERVER_BUSY;
+        SendJson(conn, response);
     }
-    SendJson(conn, response);
 }
 
 void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
