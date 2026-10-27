@@ -6,7 +6,51 @@
 
 #include "config.h"
 
-MySqlDB::MySqlDB() { m_conn = mysql_init(nullptr); }
+namespace {
+class MySqlClientLibrary {
+public:
+    MySqlClientLibrary() : m_initialized(mysql_library_init(0, nullptr, nullptr) == 0) {}
+
+    ~MySqlClientLibrary() {
+        if (m_initialized) mysql_library_end();
+    }
+
+    bool Initialized() const { return m_initialized; }
+
+private:
+    bool m_initialized;
+};
+
+// Initialize before main starts application threads. Service is initialized later, so its
+// worker pool is destroyed before this library cleanup runs at process shutdown.
+MySqlClientLibrary g_mysqlClientLibrary;
+
+class MySqlThreadCleanup {
+public:
+    ~MySqlThreadCleanup() {
+        if (m_used) mysql_thread_end();
+    }
+
+    void MarkUsed() { m_used = true; }
+
+private:
+    bool m_used = false;
+};
+
+MySqlThreadCleanup& CurrentThreadCleanup() {
+    static thread_local MySqlThreadCleanup cleanup;
+    return cleanup;
+}
+};  // namespace
+
+MySqlDB::MySqlDB() : m_conn(nullptr) {
+    if (!g_mysqlClientLibrary.Initialized()) return;
+
+    // mysql_init initializes the calling thread's MySQL state. Release it when that thread exits.
+    CurrentThreadCleanup().MarkUsed();
+
+    m_conn = mysql_init(nullptr);
+}
 
 MySqlDB::~MySqlDB() {
     // 有没有更好的方法？如何防止数据库句柄泄漏
