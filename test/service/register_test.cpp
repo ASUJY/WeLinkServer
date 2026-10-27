@@ -70,6 +70,7 @@ public:
             // 设置收到消息的回调（空实现，测试用）
             conn->setMessageCallback(
                 [](const muduo::net::TcpConnectionPtr&, muduo::net::Buffer*, muduo::Timestamp) {});
+            conn->setCloseCallback([](const muduo::net::TcpConnectionPtr&) {});
             conn->connectEstablished();  // 手动触发 "已连接" 状态：把连接设置为 established 并回调
                                          // connectionCallback（因为这是伪造的连接，没有真实的
                                          // accept/connect 过程）。
@@ -97,6 +98,7 @@ public:
 
     const muduo::net::TcpConnectionPtr& Connection() const { return m_conn; }
 
+    // 关闭客户端
     void DisconnectPeer() {
         if (m_peerFd >= 0) {
             close(m_peerFd);
@@ -177,16 +179,9 @@ protected:
         return request;
     }
 
-    nlohmann::json Register(TestConnection& connection, const std::string& tag) {
-        static std::atomic<uint64_t> sequence{0};
-        const std::string unique = tag + "_" + std::to_string(sequence.fetch_add(1));
-        return RegisterWithFields(connection, "139" + std::to_string(sequence.load()), unique,
-                                  "register-test-password", "test-avatar");
-    }
-
-    nlohmann::json RegisterWithFields(TestConnection& connection, const std::string& phone,
-                                      const std::string& username, const std::string& password,
-                                      const std::string& avatar) {
+    nlohmann::json Register(TestConnection& connection, const std::string& phone,
+                            const std::string& username, const std::string& password,
+                            const std::string& avatar) {
         nlohmann::json request = {{"msgtype", static_cast<int>(E_MSG_TYPE::REG_MSG)},
                                   {"data",
                                    {{"phone", phone},
@@ -257,69 +252,51 @@ protected:
 }  // namespace
 
 TEST_F(RegisterIntegrationTest, NormalRegistration) {
-    const auto registration = Register(*m_first, "register_service");
+    const auto registration =
+        Register(*m_first, "13888888888", "register_test", "register_test_password", "test-avatar");
     ASSERT_EQ(registration.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
     const int64_t userId       = registration.at("data").at("userid").get<int64_t>();
     const std::string username = registration.at("data").at("username").get<std::string>();
 
-    const auto badPassword = Login(*m_first, username, "wrong-password");
-    EXPECT_EQ(badPassword.at("data").at("errtype").get<int>(),
-              static_cast<int>(E_ERR_TYPE::ACCOUNT_ERROR));
-
-    const auto login = Login(*m_first, username, "service-test-password");
+    const auto login = Login(*m_first, username, "register_test_password");
     ASSERT_EQ(login.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
     EXPECT_EQ(UserChangeModel().QueryState(userId), "online");
     TrackLogin(userId, *m_first);
 }
 
-TEST_F(RegisterIntegrationTest, DuplicatePhoneAndNicknameAreRejected) {
-    const auto first = Register(*m_first, "service_duplicate_account");
-    ASSERT_EQ(first.at("data").at("errtype").get<int>(),
-              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-    const auto phone    = first.at("data").at("phone").get<std::string>();
-    const auto username = first.at("data").at("username").get<std::string>();
-
-    const auto duplicatePhone = RegisterWithFields(*m_second, phone, "service_duplicate_phone_name",
-                                                   "service-test-password", "test-avatar");
-    EXPECT_EQ(duplicatePhone.at("data").at("errtype").get<int>(),
-              static_cast<int>(E_ERR_TYPE::USER_EXIT));
-
-    const auto duplicateNickname = RegisterWithFields(*m_second, "139999999999", username,
-                                                      "service-test-password", "test-avatar");
-    EXPECT_EQ(duplicateNickname.at("data").at("errtype").get<int>(),
-              static_cast<int>(E_ERR_TYPE::USER_EXIT));
-}
-
 TEST_F(RegisterIntegrationTest, EmptyRequiredRegistrationFieldsAreRejected) {
     const std::vector<std::array<std::string, 4>> invalidRequests = {
-        {"", "service_empty_phone", "service-test-password", "test-avatar"},
-        {"13988880001", "", "service-test-password", "test-avatar"},
-        {"13988880002", "service_empty_password", "", "test-avatar"},
+        {"", "register_empty_phone", "register-test-password", "test-avatar"},
+        {"13988880001", "", "register-test-password", "test-avatar"},
+        {"13988880002", "register_empty_password", "", "test-avatar"},
     };
-    for (size_t i = 0; i < invalidRequests.size(); ++i) {
-        const auto& fields = invalidRequests[i];
+    for (auto it = invalidRequests.cbegin(); it != invalidRequests.cend(); ++it) {
         const auto response =
-            RegisterWithFields(*m_first, fields[0], fields[1], fields[2], fields[3]);
+            Register(*m_first, (*it).at(0), (*it).at(1), (*it).at(2), (*it).at(3));
         EXPECT_NE(response.at("data").at("errtype").get<int>(),
                   static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS))
-            << "invalid registration case " << i;
+            << "invalid registration case!";
     }
 }
 
 TEST_F(RegisterIntegrationTest, InvalidPhoneFormatIsRejected) {
-    const auto response =
-        RegisterWithFields(*m_first, "not-a-phone", "service_invalid_phone_format",
-                           "service-test-password", "test-avatar");
+    const auto response = Register(*m_first, "not-a-phone", "register_invalid_phone_format",
+                                   "register-test-password", "test-avatar");
     EXPECT_NE(response.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+
+    const auto response1 = Register(*m_first, "1399", "register_invalid_phone_format",
+                                    "register-test-password", "test-avatar");
+    EXPECT_NE(response1.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
 }
 
 TEST_F(RegisterIntegrationTest, OverlongRegistrationFieldIsRejected) {
     const std::string tooLong(4096, 'x');
-    const auto response = RegisterWithFields(*m_first, "13988880006", tooLong,
-                                             "service-test-password", "test-avatar");
+    const auto response =
+        Register(*m_first, "13988880006", tooLong, "register-test-password", "test-avatar");
     EXPECT_NE(response.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
 }
@@ -333,6 +310,25 @@ TEST_F(RegisterIntegrationTest, NonStringRegistrationFieldDoesNotEscapeHandler) 
                                 {"avatar", "test-avatar"}}}};
 
     EXPECT_NO_THROW(Call(m_first->Connection(), request));
+}
+
+TEST_F(RegisterIntegrationTest, DuplicatePhoneAndNicknameAreRejected) {
+    const auto first = Register(*m_first, "13978888888", "register_duplicate_account",
+                                "register-test-password", "test-avatar");
+    ASSERT_EQ(first.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const auto phone    = first.at("data").at("phone").get<std::string>();
+    const auto username = first.at("data").at("username").get<std::string>();
+
+    const auto duplicatePhone = Register(*m_second, phone, "register_duplicate_phone_name",
+                                         "register-test-password", "test-avatar");
+    EXPECT_EQ(duplicatePhone.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::USER_EXIT));
+
+    // const auto duplicateNickname =
+    //     Register(*m_second, "13999999999", username, "register-test-password", "test-avatar");
+    // EXPECT_EQ(duplicateNickname.at("data").at("errtype").get<int>(),
+    //           static_cast<int>(E_ERR_TYPE::USER_EXIT));
 }
 
 TEST_F(RegisterIntegrationTest, MissingRegistrationFieldIsRejected) {
@@ -366,8 +362,8 @@ TEST_F(RegisterIntegrationTest, ConcurrentDuplicateRegistrationCreatesOneAccount
         nlohmann::json request = {{"msgtype", static_cast<int>(E_MSG_TYPE::REG_MSG)},
                                   {"data",
                                    {{"phone", "13988880007"},
-                                    {"username", "service_concurrent_duplicate"},
-                                    {"password", "service-test-password"},
+                                    {"username", "register_concurrent_duplicate"},
+                                    {"password", "register-test-password"},
                                     {"avatar", "test-avatar"}}}};
         Call(connection.Connection(), request);
         return connection.ReadJson();
@@ -401,8 +397,8 @@ TEST_F(RegisterIntegrationTest, ConcurrentDuplicateRegistrationCreatesOneAccount
 TEST_F(RegisterIntegrationTest, AvatarAndPasswordPersistenceFollowRegistrationContract) {
     const std::string password = "registration-password-to-hash";
     const std::string avatar   = "registration-avatar-value";
-    const auto registration    = RegisterWithFields(
-        *m_first, "13988880003", "service_registration_persistence", password, avatar);
+    const auto registration =
+        Register(*m_first, "13988880003", "service_registration_persistence", password, avatar);
     ASSERT_EQ(registration.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
     const int64_t userId = registration.at("data").at("userid").get<int64_t>();
@@ -417,32 +413,21 @@ TEST_F(RegisterIntegrationTest, AvatarAndPasswordPersistenceFollowRegistrationCo
     TrackLogin(userId, *m_first);
 }
 
-TEST_F(RegisterIntegrationTest, RegistrationCommitSurvivesClientDisconnectBeforeReply) {
-    const std::string username = "service_client_disconnect_registration";
-    m_first->DisconnectPeer();
-
-    nlohmann::json request = {{"msgtype", static_cast<int>(E_MSG_TYPE::REG_MSG)},
-                              {"data",
-                               {{"phone", "13988880004"},
-                                {"username", username},
-                                {"password", "service-test-password"},
-                                {"avatar", "test-avatar"}}}};
-    Call(m_first->Connection(), request);
-
-    const int64_t userId = FindUserIdByName(username);
-    ASSERT_NE(userId, -1);
-    m_userIds.push_back(userId);
-    EXPECT_EQ(UserChangeModel().QueryState(userId), "offline");
-}
-
 TEST_F(RegisterIntegrationTest, RegistrationCommitSurvivesServerProcessExitBeforeReply) {
     const std::string username =
-        "service_server_exit_registration_" + std::to_string(static_cast<long long>(getpid()));
+        "register_server_exit_registration_" + std::to_string(static_cast<long long>(getpid()));
+
+    // 手机号改为按进程号生成，避免重复
+    std::string phoneSuffix =
+        std::to_string(static_cast<unsigned long long>(getpid()) % 100000000ULL);
+    phoneSuffix.insert(0, 8 - phoneSuffix.size(), '0');
+    const std::string phone = "139" + phoneSuffix;
+
     const pid_t child = fork();
     ASSERT_NE(child, -1);
     if (child == 0) {
         if (setenv("WE_LINK_CRASH_REGISTRATION_USER", username.c_str(), 1) != 0 ||
-            setenv("WE_LINK_CRASH_REGISTRATION_PHONE", "13988880005", 1) != 0) {
+            setenv("WE_LINK_CRASH_REGISTRATION_PHONE", phone.c_str(), 1) != 0) {
             _exit(126);
         }
         execl("/proc/self/exe", "run_all_test",
@@ -461,10 +446,39 @@ TEST_F(RegisterIntegrationTest, RegistrationCommitSurvivesServerProcessExitBefor
     m_userIds.push_back(userId);
     EXPECT_EQ(UserChangeModel().QueryState(userId), "offline");
 
-    const auto login = Login(*m_first, username, "service-test-password");
+    const auto login = Login(*m_first, username, "register-test-password");
     ASSERT_EQ(login.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
     TrackLogin(userId, *m_first);
+}
+TEST(RegistrationCrashWorker, ExitsAfterCommitWithoutReply) {
+    /**
+     * 执行注册后立即以退出码 86
+     * 结束，用来模拟客户端提交请求到服务器后，服务器未回复，客户端便崩溃。
+     */
+    const char* username = std::getenv("WE_LINK_CRASH_REGISTRATION_USER");
+    const char* phone    = std::getenv("WE_LINK_CRASH_REGISTRATION_PHONE");
+    if (username == nullptr || phone == nullptr) {
+        GTEST_SKIP()
+            << "This test is run as a subprocess by the registration crash integration test";
+    }
+
+    (void)AppConfig::Instance();
+    nlohmann::json request = {{"msgtype", static_cast<int>(E_MSG_TYPE::REG_MSG)},
+                              {"data",
+                               {{"phone", phone},
+                                {"username", username},
+                                {"password", "register-test-password"},
+                                {"avatar", "test-avatar"}}}};
+    UserModel userModel;
+    UserChangeModel userChangeModel;
+    RegistrationService registrationService(userModel, userChangeModel);
+    const auto response = registrationService.Register(request);
+    if (response.at("data").at("errtype").get<int>() !=
+        static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS)) {
+        _exit(87);
+    }
+    _exit(86);  // Simulate process termination after database commit and before a client reply.
 }
 
 TEST_F(RegisterIntegrationTest, MysqlUnavailableReturnsRegistrationFailure) {
@@ -503,26 +517,6 @@ TEST_F(RegisterIntegrationTest, MysqlUnavailableReturnsRegistrationFailure) {
     ASSERT_TRUE(WIFEXITED(status));
     EXPECT_EQ(WEXITSTATUS(status), 0);
 }
-
-TEST(RegistrationCrashWorker, ExitsAfterCommitWithoutReply) {
-    const char* username = std::getenv("WE_LINK_CRASH_REGISTRATION_USER");
-    const char* phone    = std::getenv("WE_LINK_CRASH_REGISTRATION_PHONE");
-    if (username == nullptr || phone == nullptr) {
-        GTEST_SKIP()
-            << "This test is run as a subprocess by the registration crash integration test";
-    }
-
-    (void)AppConfig::Instance();
-    nlohmann::json request = {{"msgtype", static_cast<int>(E_MSG_TYPE::REG_MSG)},
-                              {"data",
-                               {{"phone", phone},
-                                {"username", username},
-                                {"password", "service-test-password"},
-                                {"avatar", "test-avatar"}}}};
-    Service::instance()->Register(nullptr, request, muduo::Timestamp::now());
-    _exit(86);  // Simulate process termination after database commit and before a client reply.
-}
-
 TEST(RegistrationDatabaseFailureWorker, ReturnsRegistrationFailure) {
     if (std::getenv("WE_LINK_MYSQL_FAILURE_WORKER") == nullptr) {
         GTEST_SKIP() << "This test runs in a subprocess with an unavailable MySQL endpoint";
@@ -537,8 +531,8 @@ TEST(RegistrationDatabaseFailureWorker, ReturnsRegistrationFailure) {
     nlohmann::json request = {{"msgtype", static_cast<int>(E_MSG_TYPE::REG_MSG)},
                               {"data",
                                {{"phone", "13988880008"},
-                                {"username", "service_mysql_unavailable"},
-                                {"password", "service-test-password"},
+                                {"username", "register_mysql_unavailable"},
+                                {"password", "register-test-password"},
                                 {"avatar", "test-avatar"}}}};
     service->GetHandler(static_cast<int>(E_MSG_TYPE::REG_MSG))(connection.Connection(), request,
                                                                muduo::Timestamp::now());

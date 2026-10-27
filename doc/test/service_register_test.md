@@ -1,0 +1,14 @@
+# 注册业务测试用例
+| 是否通过 | 测试功能                                                                                                                                                                     |                      测试用例名称                      |
+| :------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------: |
+|   通过   | 手机号、昵称、密码都正常的时候能否注册成功                                                                                                                                   |                   NormalRegistration                   |
+|   通过   | 手机号、昵称或密码为空时，应拒绝注册。                                                                                                                                       |       EmptyRequiredRegistrationFieldsAreRejected       |
+|   通过   | 手机号格式无效时，应拒绝注册。                                                                                                                                               |              InvalidPhoneFormatIsRejected              |
+|   通过   | 超长昵称应被拒绝，不能截断后注册。                                                                                                                                           |          OverlongRegistrationFieldIsRejected           |
+|   通过   | 手机号等字段类型错误时，异常不应逃出注册处理函数（检查调用处理器不会抛出异常。）。                                                                                           |     NonStringRegistrationFieldDoesNotEscapeHandler     |
+|   通过   | 已注册的手机号或昵称再次注册时（允许昵称相同,以后要修改不能通过昵称登录），应返回重复账号错误。                                                                              |          DuplicatePhoneAndNicknameAreRejected          |
+|   通过   | 请求缺少手机号字段时，注册不能成功。                                                                                                                                         |           MissingRegistrationFieldIsRejected           |
+|   通过   | 两个客户端同时用相同手机号和昵称注册，预期恰好一个成功，避免并发重复创建账户。                                                                                               |    ConcurrentDuplicateRegistrationCreatesOneAccount    |
+|  不通过  | 检查注册响应和登录响应中的头像值；同时确认数据库没有明文保存密码，并验证原始密码仍可登录。                                                                                   | AvatarAndPasswordPersistenceFollowRegistrationContract |
+|   通过   | 子进程在注册提交后、服务器回复前退出；父进程确认账户仍存在、状态为 offline，之后仍可登录。（模拟客户端在收到注册响应前断开后，检查账户仍写入数据库，且用户状态为 offline。） | RegistrationCommitSurvivesServerProcessExitBeforeReply |
+|   通过   | MySQL 不可用时，注册应返回失败响应。                                                                                                                                         |       MysqlUnavailableReturnsRegistrationFailure       |

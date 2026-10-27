@@ -6,6 +6,11 @@
 cmake -S . -B build -DBUILD_TESTS=ON
 cmake --build build -j
 ctest --test-dir build --output-on-failure
+
+# 列出所有测试组
+./bin/run_all_test --gtest_list_tests
+# 单独执行某个测试组
+./bin/run_all_test --gtest_filter='LoginIntegrationTest.*'
 ```
 
 Snowflake 和协议测试不需要外部服务。
