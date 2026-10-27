@@ -1,6 +1,7 @@
 #include "service.h"
 
 #include <muduo/base/Logging.h>
+#include <muduo/net/EventLoop.h>
 
 #include <iostream>
 #include <string>
@@ -15,7 +16,8 @@ Service* Service::instance() {
     return &service;
 }
 
-Service::Service() : m_registrationService(m_userModel, m_userChangeModel) {
+Service::Service()
+    : m_registrationService(m_userModel, m_userChangeModel), m_threadPool(new ThreadPool(4, 1000)) {
     // m_msgHandlerMap.insert(
     //     {E_MSG_TYPE::LOGIN_MSG, std::bind(&Service::Login,
     //     this, std::placeholders::_1, std::placeholders::_2,
@@ -185,8 +187,25 @@ void Service::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js
 
 void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                        muduo::Timestamp time) {
-    nlohmann::json response = m_registrationService.Register(js);
-    SendJson(conn, response);
+    if (!conn) {
+        LOG_WARN << "Reject registration request without a connection";
+        return;
+    }
+
+    nlohmann::json registerInfo = js;
+    bool accepted               = false;
+    m_threadPool->AppendQueue(accepted, [this, conn, registerInfo = std::move(registerInfo)]() {
+        nlohmann::json response = m_registrationService.Register(registerInfo);
+        conn->getLoop()->queueInLoop(
+            [this, conn, response = std::move(response)]() { SendJson(conn, response); });
+    });
+
+    if (!accepted) {
+        nlohmann::json response;
+        response["msgtype"]         = E_MSG_TYPE::REG_MSG_ACK;
+        response["data"]["errtype"] = E_ERR_TYPE::SERVER_BUSY;
+        SendJson(conn, response);
+    }
 }
 
 void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,

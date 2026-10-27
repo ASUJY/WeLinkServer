@@ -25,6 +25,7 @@ enum class E_ERR_TYPE : int {
     ACCOUNT_ERROR,
     GET_FRIEND_INFO_FAILED,
     GET_FRIEND_INFO_SUCCESS,
+    SERVER_BUSY
 };
 
 enum class E_ACCOUNT_TYPE : int { NICKNAME = 0, PHONE };

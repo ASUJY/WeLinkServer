@@ -12,6 +12,7 @@
 #include "offlinemessagemodel.h"
 #include "redis.h"
 #include "registrationservice.h"
+#include "threadpool.h"
 #include "userchangemodel.h"
 #include "usermodel.h"
 
@@ -41,6 +42,7 @@ public:
 
 private:
     Service();  // 构造函数私有化，禁止外部创建
+    ~Service() = default;
 
     bool SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response);
     bool GetAuthenticatedUserId(const muduo::net::TcpConnectionPtr& conn, int64_t& userId);
@@ -62,6 +64,8 @@ private:
     Redis m_redis;
 
     RegistrationService m_registrationService;
+
+    std::unique_ptr<ThreadPool> m_threadPool;
 };
 
 #endif

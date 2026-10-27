@@ -65,6 +65,7 @@ if(BUILD_TESTS)
         ${PROJECT_SOURCE_DIR}/src/model/*.cpp
         ${PROJECT_SOURCE_DIR}/src/service/*.cpp
         ${PROJECT_SOURCE_DIR}/src/network/*.cpp
+        ${PROJECT_SOURCE_DIR}/src/pool/*.cpp
     )
     # 编译静态库 chatserver_lib
     add_library(chatserver_lib STATIC ${SRC_LIST})

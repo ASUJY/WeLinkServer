@@ -4,6 +4,7 @@ aux_source_directory(./service SERVICE_SRC_LIST)
 aux_source_directory(./db DB_SRC_LIST)
 aux_source_directory(./model MODEL_SRC_LIST)
 aux_source_directory(./redis REDIS_SRC_LIST)
+aux_source_directory(./pool POOL_SRC_LIST)
 
 add_executable(
     WeLinkServer
@@ -13,6 +14,7 @@ add_executable(
     ${DB_SRC_LIST} 
     ${MODEL_SRC_LIST}
     ${REDIS_SRC_LIST}
+    ${POOL_SRC_LIST}
 )
 
 target_link_libraries(

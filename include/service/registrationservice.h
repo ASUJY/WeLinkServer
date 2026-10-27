@@ -22,7 +22,7 @@ class RegistrationService {
 public:
     RegistrationService(UserModel& userModel, UserChangeModel& UserChangeModel);
 
-    Json Register(Json& registerInfo);
+    Json Register(const Json& registerInfo);
 
 private:
     bool ValidateRegistrationInfo(const Json& registerInfo, User& registeredUser);

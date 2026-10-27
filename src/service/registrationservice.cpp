@@ -7,7 +7,7 @@
 RegistrationService::RegistrationService(UserModel& userModel, UserChangeModel& userChangeModel)
     : m_userModel(userModel), m_userChangeModel(userChangeModel), m_idGenerator(1, 1) {}
 
-RegistrationService::Json RegistrationService::Register(Json& registerInfo) {
+RegistrationService::Json RegistrationService::Register(const Json& registerInfo) {
     nlohmann::json response;
     User registeredUser;
     if (!ValidateRegistrationInfo(registerInfo, registeredUser)) {
