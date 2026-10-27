@@ -448,7 +448,8 @@ private:
             std::lock_guard<std::mutex> lock(m_startMtx);
             ++m_readyWorkers;
         }
-        m_startCondv.notify_one();
+        // m_startCondv.notify_one();
+        m_startCondv.notify_all();
         {
             std::unique_lock<std::mutex> lock(m_startMtx);
             m_startCondv.wait(lock, [&] { return m_startWorkers; });
