@@ -4,6 +4,19 @@
 
 #include "common.h"
 
+namespace {
+bool IsValidPhoneNumber(const std::string& phone) {
+    if (phone.size() != 11 || phone[0] != '1' || phone[1] < '3' || phone[1] > '9') {
+        return false;
+    }
+
+    for (char digit : phone) {
+        if (digit < '0' || digit > '9') return false;
+    }
+    return true;
+}
+}  // namespace
+
 RegistrationService::RegistrationService(UserModel& userModel, UserChangeModel& userChangeModel)
     : m_userModel(userModel), m_userChangeModel(userChangeModel), m_idGenerator(1, 1) {}
 
@@ -40,11 +53,13 @@ bool RegistrationService::ValidateRegistrationInfo(const Json& registerInfo, Use
 
     const auto& data = registerInfo.at("data");
     RegisterRequestInfo result;
-    if (!ReadRequiredString(data, "phone", 32, result.phone) ||
+    if (!ReadRequiredString(data, "phone", 11, result.phone) ||
         !ReadRequiredString(data, "username", 64, result.username) ||
         !ReadRequiredString(data, "password", 128, result.password)) {
         return false;
     }
+
+    if (!IsValidPhoneNumber(result.phone)) return false;
 
     // 头像可选：缺失时使用空字符串；
     result.avatar.clear();
