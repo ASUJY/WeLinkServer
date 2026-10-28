@@ -75,7 +75,7 @@ bool UserModel::QueryAccount(User& user, E_ACCOUNT_TYPE type) {
     return true;
 }
 
-std::vector<std::string> UserModel::QueryUserInfo(std::string username, E_ACCOUNT_TYPE type) {
+std::vector<std::string> UserModel::QueryUserInfo(const std::string username, E_ACCOUNT_TYPE type) {
     std::string sql;
     if (!BuildUserInfoQuery(type, sql)) {
         return {};

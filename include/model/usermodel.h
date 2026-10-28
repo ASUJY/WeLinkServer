@@ -15,7 +15,7 @@ public:
     // 查询用户信息
     bool QueryAccount(User& user, E_ACCOUNT_TYPE type);
 
-    std::vector<std::string> QueryUserInfo(std::string username, E_ACCOUNT_TYPE type);
+    std::vector<std::string> QueryUserInfo(const std::string username, E_ACCOUNT_TYPE type);
 };
 
 #endif

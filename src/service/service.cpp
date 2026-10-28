@@ -17,9 +17,13 @@ Service* Service::instance() {
 }
 
 Service::Service()
-    : m_registrationService(m_userModel, m_userChangeModel),
-      m_threadPool(new ThreadPool(4, 1000)),
-      m_loginService(m_userModel, m_userChangeModel, m_offlineMsgModel) {
+    : m_threadPool(new ThreadPool(4, 1000)),
+      m_registrationService(m_userModel, m_userChangeModel),
+      m_loginService(m_userModel, m_userChangeModel, m_offlineMsgModel),
+      m_friendService(m_userModel, m_friendModel,
+                      [this](int64_t userId, const nlohmann::json& message) {
+                          DeliverToUser(userId, message);
+                      }) {
     // m_msgHandlerMap.insert(
     //     {E_MSG_TYPE::LOGIN_MSG, std::bind(&Service::Login,
     //     this, std::placeholders::_1, std::placeholders::_2,
@@ -220,108 +224,59 @@ void Service::Register(const muduo::net::TcpConnectionPtr& conn, nlohmann::json&
 
 void Service::GetFriendInfo(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                             muduo::Timestamp time) {
-    std::map<std::string, std::string> data = js["data"];
-    nlohmann::json response;
-    response["msgtype"]             = E_MSG_TYPE::GET_FRIEND_INFO_ACK;
-    std::vector<std::string> resVec = m_userModel.QueryUserInfo(
-        data["username"], static_cast<E_ACCOUNT_TYPE>(stoi(data["accountType"])));
-    if (!resVec.empty()) {
-        response["data"]["userid"]   = resVec[0];
-        response["data"]["username"] = resVec[2];
-        response["data"]["phone"]    = resVec[1];
-        response["data"]["errtype"]  = E_ERR_TYPE::GET_FRIEND_INFO_SUCCESS;
-    } else {
-        response["data"]["errtype"] = E_ERR_TYPE::GET_FRIEND_INFO_FAILED;
-        LOG_INFO << "获取朋友失败";
+    if (!conn) {
+        return;
     }
-    SendJson(conn, response);
+
+    nlohmann::json request = js;
+    bool accepted          = false;
+    m_threadPool->AppendQueue(accepted, [this, conn, request]() {
+        nlohmann::json response = m_friendService.GetFriendInfo(request);
+        conn->getLoop()->queueInLoop(
+            [this, conn, response = std::move(response)]() { SendJson(conn, response); });
+    });
+
+    if (!accepted) {
+        nlohmann::json response;
+        response["msgtype"]         = E_MSG_TYPE::GET_FRIEND_INFO_ACK;
+        response["data"]["errtype"] = E_ERR_TYPE::SERVER_BUSY;
+        SendJson(conn, response);
+    }
 }
 
 void Service::AddFriendReq(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                            muduo::Timestamp time) {
-    std::map<std::string, std::string> data = js["data"];
-    nlohmann::json response;
     int64_t userid = -1;
     if (!GetAuthenticatedUserId(conn, userid)) {
         LOG_WARN << "Reject friend request from unauthenticated connection";
         return;
     }
-    std::string username   = data["username"];
-    int64_t friendid       = stoll(data["friendid"]);
-    std::string friendname = data["friendname"];
 
-    response["data"]["senderid"]     = userid;
-    response["data"]["sendername"]   = username;
-    response["data"]["receiverid"]   = friendid;
-    response["data"]["receivername"] = friendname;
-    response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_REQ;
-
-    {
-        std::lock_guard<std::mutex> locker(m_connMtx);
-        if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
-            // m_userConnMap[friendid]->send(response.dump());
-            SendJson(m_userConnMap[friendid], response);
-        } else {
-            // 查询用户是否在线
-            auto state = m_userChangeModel.QueryState(friendid);
-            if (state == "online") {
-                m_redis.Publish(friendid, response.dump());
-                return;
-            }
-
-            // 用户离线
-            m_offlineMsgModel.Insert(friendid, response.dump());
-        }
+    const nlohmann::json request = js;
+    bool accepted                = false;
+    m_threadPool->AppendQueue(
+        accepted, [this, userid, request]() { m_friendService.AddFriendReq(userid, request); });
+    if (!accepted) {
+        // 应该返回给发送方，告诉他好友请求转发失败
+        LOG_WARN << "Friend request rejected: thread pool is busy";
     }
 }
 
 void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                            muduo::Timestamp time) {
-    std::map<std::string, std::string> data = js["data"];
-    nlohmann::json response;
     int64_t userid = -1;
     if (!GetAuthenticatedUserId(conn, userid)) {
         LOG_WARN << "Reject friend reply from unauthenticated connection";
         return;
     }
-    std::string username   = data["username"];
-    int64_t friendid       = stoll(data["friendid"]);
-    std::string friendname = data["friendname"];
 
-    response["data"]["senderid"]     = userid;
-    response["data"]["sendername"]   = username;
-    response["data"]["receiverid"]   = friendid;
-    response["data"]["receivername"] = friendname;
-    response["data"]["ackType"]      = data["ackType"];
-    response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_ACK;
-    LOG_INFO << "Service::AddFriendAckAgree: userid" << userid << " username: " << username
-             << " friendid: " << friendid << " friendname: " << friendname
-             << "status: " << data["ackType"];
-
-    {
-        std::lock_guard<std::mutex> locker(m_connMtx);
-        if (m_userConnMap.find(friendid) != m_userConnMap.end()) {
-            if (static_cast<FriendState>(stoi(data["ackType"])) == FriendState::ACCEPT) {
-                m_friendModel.Insert(userid, friendid);
-                m_friendModel.Insert(friendid, userid);
-            }
-            // m_userConnMap[friendid]->send(response.dump());
-            SendJson(m_userConnMap[friendid], response);
-        } else {
-            // 查询用户是否在线
-            auto state = m_userChangeModel.QueryState(friendid);
-            if (state == "online") {
-                if (static_cast<FriendState>(stoi(data["ackType"])) == FriendState::ACCEPT) {
-                    m_friendModel.Insert(userid, friendid);
-                    m_friendModel.Insert(friendid, userid);
-                }
-                m_redis.Publish(friendid, response.dump());
-                return;
-            }
-
-            // 用户离线
-            m_offlineMsgModel.Insert(friendid, response.dump());
-        }
+    const nlohmann::json request = js;
+    bool accepted                = false;
+    m_threadPool->AppendQueue(
+        accepted, [this, userid, request]() { m_friendService.AddFriendAck(userid, request); });
+    if (!accepted) {
+        // 应该返回给发送方，告诉他好友请求转发失败
+        LOG_WARN << "Friend reply rejected: thread pool is busy";
     }
 }
 
@@ -400,4 +355,30 @@ bool Service::SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann:
     conn->send(packet);
 
     return true;
+}
+
+void Service::DeliverToUser(int64_t userId, const nlohmann::json& message) {
+    muduo::net::TcpConnectionPtr conn;
+
+    {
+        std::lock_guard<std::mutex> locker(m_connMtx);
+        const auto it = m_userConnMap.find(userId);
+        if (it != m_userConnMap.end()) {
+            conn = it->second;
+        }
+    }
+
+    if (conn) {
+        conn->getLoop()->queueInLoop([this, conn, message]() { SendJson(conn, message); });
+        return;
+    }
+
+    // 用户是否在其他服务器
+    if (m_userChangeModel.QueryState(userId) == "online") {
+        m_redis.Publish(userId, message.dump());
+        return;
+    }
+
+    // 用户离线
+    m_offlineMsgModel.Insert(userId, message.dump());
 }

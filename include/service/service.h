@@ -8,6 +8,7 @@
 
 #include "common.h"
 #include "friendmodel.h"
+#include "friendservice.h"
 #include "json.hpp"
 #include "loginservice.h"
 #include "offlinemessagemodel.h"
@@ -48,6 +49,7 @@ private:
     bool SendJson(const muduo::net::TcpConnectionPtr& conn, const nlohmann::json& response);
     bool GetAuthenticatedUserId(const muduo::net::TcpConnectionPtr& conn, int64_t& userId);
     std::shared_ptr<std::mutex> GetUserSessionMutex(int64_t userId);
+    void DeliverToUser(int64_t userId, const nlohmann::json& message);
 
 private:
     std::unordered_map<E_MSG_TYPE, MsgHandler> m_msgHandlerMap;
@@ -70,6 +72,7 @@ private:
 
     RegistrationService m_registrationService;
     LoginService m_loginService;
+    FriendService m_friendService;
 
     std::unique_ptr<ThreadPool> m_threadPool;
 };
