@@ -1,3 +1,5 @@
+#pragma once
+
 #include "json.hpp"
 #include "snowflake.h"
 #include "userchangemodel.h"

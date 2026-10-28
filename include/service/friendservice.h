@@ -1,3 +1,5 @@
+#pragma once
+
 #include "friendmodel.h"
 #include "json.hpp"
 #include "usermodel.h"

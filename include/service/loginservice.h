@@ -1,3 +1,5 @@
+#pragma once
+
 #include "json.hpp"
 #include "offlinemessagemodel.h"
 #include "userchangemodel.h"
