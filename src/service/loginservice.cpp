@@ -13,10 +13,9 @@ LoginService::LoginService(UserModel& userModel, UserChangeModel& userChangeMode
 LoginService::Json LoginService::Login(const Json& loginInfo,
                                        const SessionRegistrar& registerSession) {
     nlohmann::json response;
-
+    response["msgtype"]  = E_MSG_TYPE::LOGIN_MSG_ACK;
     int accountTypeValue = -1;
     if (!ValidateLoginInfo(loginInfo, accountTypeValue)) {
-        response["msgtype"]         = E_MSG_TYPE::LOGIN_MSG_ACK;
         response["data"]["errtype"] = E_ERR_TYPE::ACCOUNT_ERROR;
         return response;
     }
