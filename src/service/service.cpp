@@ -23,7 +23,10 @@ Service::Service()
       m_friendService(m_userModel, m_friendModel,
                       [this](int64_t userId, const nlohmann::json& message) {
                           DeliverToUser(userId, message);
-                      }) {
+                      }),
+      m_chatService([this](int64_t userId, const nlohmann::json& message) {
+          DeliverToUser(userId, message);
+      }) {
     // m_msgHandlerMap.insert(
     //     {E_MSG_TYPE::LOGIN_MSG, std::bind(&Service::Login,
     //     this, std::placeholders::_1, std::placeholders::_2,
@@ -51,7 +54,7 @@ Service::Service()
                                                std::placeholders::_2, std::placeholders::_3)});
 
     m_msgHandlerMap.insert(
-        {E_MSG_TYPE::ONE_CHAT_MSG, std::bind(&Service::oneChat, this, std::placeholders::_1,
+        {E_MSG_TYPE::ONE_CHAT_MSG, std::bind(&Service::OneChat, this, std::placeholders::_1,
                                              std::placeholders::_2, std::placeholders::_3)});
 
     if (m_redis.Connect()) {
@@ -280,42 +283,15 @@ void Service::AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
     }
 }
 
-void Service::oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
+void Service::OneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                       muduo::Timestamp time) {
-    std::map<std::string, std::string> data = js["data"];
-
     int64_t senderId = -1;
     if (!GetAuthenticatedUserId(conn, senderId)) {
         LOG_WARN << "Reject chat from unauthenticated connection";
         return;
     }
 
-    int64_t receiverid = stoll(data["receiverId"]);
-    LOG_INFO << "Service::oneChat userid: " << receiverid;
-
-    // 客户端提供的发送方身份不可信，转发前用当前连接的登录身份覆盖。
-    js["data"]["senderId"] = std::to_string(senderId);
-    {
-        std::lock_guard<std::mutex> locker(m_connMtx);
-        auto it = m_userConnMap.find(receiverid);
-        if (it != m_userConnMap.end()) {
-            // it->second->send(js.dump());
-            LOG_INFO << "Service::oneChat js: " << js.dump();
-            SendJson(it->second, js);
-            return;
-        }
-    }
-
-    // 查询toid是否在线
-    auto state = m_userChangeModel.QueryState(receiverid);
-    if (state == "online") {
-        LOG_INFO << "redis Service::oneChat js: " << js.dump();
-        m_redis.Publish(receiverid, js.dump());
-        return;
-    }
-
-    // 用户不在线则暂时到服务器数据库中的离线消息表
-    m_offlineMsgModel.Insert(receiverid, js.dump());
+    m_chatService.SendOneChat(senderId, js);
 }
 
 void Service::HandleRedisSubscribeMessage(int64_t userid, const std::string& msg) {

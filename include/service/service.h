@@ -6,6 +6,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "chatservice.h"
 #include "common.h"
 #include "friendmodel.h"
 #include "friendservice.h"
@@ -37,7 +38,7 @@ public:
                       muduo::Timestamp time);
     void AddFriendAck(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                       muduo::Timestamp time);
-    void oneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
+    void OneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js,
                  muduo::Timestamp time);
 
     void HandleRedisSubscribeMessage(int64_t userid, const std::string& msg);
@@ -73,6 +74,7 @@ private:
     RegistrationService m_registrationService;
     LoginService m_loginService;
     FriendService m_friendService;
+    ChatService m_chatService;
 
     std::unique_ptr<ThreadPool> m_threadPool;
 };
