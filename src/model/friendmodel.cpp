@@ -48,3 +48,22 @@ vector<User> FriendModel::Query(int64_t userid) {
 
     return users;
 }
+
+auto FriendModel::IsFriend(int64_t userId, int64_t friendId) -> bool {
+    MySqlDB mysql;
+    if (!mysql.Connect()) {
+        return false;
+    }
+
+    std::vector<std::vector<std::string>> rows;
+    const std::vector<SqlParam> params = {{SqlParam::Type::INT64, userId, ""},
+                                          {SqlParam::Type::INT64, friendId, ""}};
+    std::string sql = "SELECT COUNT(*) FROM im_friend WHERE userid = ? AND friendid = ?";
+    if (!mysql.QueryStmt(sql, params, rows)) {
+        return false;
+    }
+
+    if (rows.size() > 0 && std::stoll(rows[0][0]) > 0) {
+        return true;
+    }
+}
