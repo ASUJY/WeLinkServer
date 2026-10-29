@@ -7,7 +7,9 @@
 
 FriendService::FriendService(UserModel& userModel, FriendModel& friendModel,
                              std::function<void(int64_t, const nlohmann::json&)> deliver)
-    : m_userModel(userModel), m_friendModel(friendModel), m_deliver(std::move(deliver)) {}
+    : m_userModel(userModel), m_friendModel(friendModel), m_deliver(std::move(deliver)) {
+    m_friendRequestModel = std::make_unique<FriendRequestModel>();
+}
 
 FriendService::Json FriendService::GetFriendInfo(const Json& request) {
     Json response;
@@ -40,38 +42,38 @@ FriendService::Json FriendService::GetFriendInfo(const Json& request) {
     return response;
 }
 
-FriendService::Json FriendService::AddFriendReq(int64_t userId, const Json& request) {
+void FriendService::AddFriendReq(int64_t userId, const Json& request) {
     // 需要添加request校验
     try {
         nlohmann::json response;
-        std::map<std::string, std::string> data = request["data"];
 
-        const int64_t friendId           = stoll(data["friendid"]);
+        const int64_t friendId           = request.at("data").at("friendid");
         response["data"]["senderid"]     = userId;
-        response["data"]["sendername"]   = data["username"];
+        response["data"]["sendername"]   = request.at("data").at("username");
         response["data"]["receiverid"]   = friendId;
-        response["data"]["receivername"] = data["friendname"];
+        response["data"]["receivername"] = request.at("data").at("friendname");
         response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_REQ;
+        m_friendRequestModel->Insert(userId, friendId);
         m_deliver(friendId, response);
     } catch (const std::exception& e) {
         LOG_WARN << "Invalid friend request: " << e.what();
     }
 }
 
-auto FriendService::AddFriendAck(int64_t userId, const Json& request) -> Json {
+void FriendService::AddFriendAck(int64_t userId, const Json& request) {
     // 需要添加request校验
     try {
         nlohmann::json response;
 
-        std::map<std::string, std::string> data = request["data"];
-        const int64_t friendId                  = std::stoll(data["friendid"]);
-        const int ackType                       = std::stoi(data["ackType"]);
-        response["data"]["senderid"]            = userId;
-        response["data"]["sendername"]          = data["username"];
-        response["data"]["receiverid"]          = friendId;
-        response["data"]["receivername"]        = data["friendname"];
-        response["data"]["ackType"]             = ackType;
-        response["msgtype"]                     = E_MSG_TYPE::ADD_FRIEND_ACK;
+        const int64_t friendId = request.at("data").at("friendid");
+
+        const int ackType                = request.at("data").at("ackType");
+        response["data"]["senderid"]     = userId;
+        response["data"]["sendername"]   = request.at("data").at("username");
+        response["data"]["receiverid"]   = friendId;
+        response["data"]["receivername"] = request.at("data").at("friendname");
+        response["data"]["ackType"]      = ackType;
+        response["msgtype"]              = E_MSG_TYPE::ADD_FRIEND_ACK;
 
         LOG_INFO << "Friend reply: userid " << userId << " friendid: " << friendId
                  << " status: " << ackType;
@@ -82,7 +84,7 @@ auto FriendService::AddFriendAck(int64_t userId, const Json& request) -> Json {
         }
 
         m_deliver(friendId, response);
-
+        m_friendRequestModel->Delete(friendId, userId);
     } catch (const std::exception& e) {
         LOG_WARN << "Invalid friend reply: " << e.what();
     }
@@ -98,6 +100,7 @@ bool FriendService::ValidateGetFriendInfo(const Json& request) {
         !ReadRequiredString(data, "phone", 11)) {
         return false;
     }
+    return true;
 }
 
 bool FriendService::ReadRequiredString(const Json& request, const std::string& key,
