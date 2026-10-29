@@ -143,8 +143,9 @@ protected:
         // inside Service/Redis construction.
         (void)AppConfig::Instance();
         m_service = Service::instance();
-        m_loopThread.reset(new muduo::net::EventLoopThread(
-            muduo::net::EventLoopThread::ThreadInitCallback(), "service-integration-test"));
+        m_loopThread.reset(
+            new muduo::net::EventLoopThread(muduo::net::EventLoopThread::ThreadInitCallback(),
+                                            "register-service-integration-test"));
         m_loop = m_loopThread->startLoop();
         // 创建了两个连接，相当于m_loop所在的线程要处理两个TCP连接
         m_first.reset(new TestConnection(m_loop));
@@ -247,7 +248,7 @@ protected:
     std::unique_ptr<TestConnection> m_first;   // 模拟客户端A
     std::unique_ptr<TestConnection> m_second;  // 模拟客户端B
     std::vector<int64_t> m_userIds;
-    std::vector<std::pair<int64_t, muduo::net::TcpConnectionPtr>> m_loggedIn;
+    std::vector<std::pair<int64_t, muduo::net::TcpConnectionPtr>> m_loggedIn;  // 已登录的连接
 };
 }  // namespace
 
