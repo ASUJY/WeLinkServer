@@ -2,8 +2,9 @@
 
 #include <muduo/base/Logging.h>
 
-ChatService::ChatService(std::function<void(int64_t, const Json&)> deliver)
-    : m_deliver(std::move(deliver)) {}
+ChatService::ChatService(FriendModel& friendModel,
+                         std::function<void(int64_t, const Json&)> deliver)
+    : m_deliver(std::move(deliver)), m_friendModel(friendModel) {}
 
 void ChatService::SendOneChat(int64_t senderId, const Json& request) {
     if (!request.is_object() || !request.contains("data") || !request.at("data").is_object() ||
@@ -40,6 +41,10 @@ void ChatService::SendOneChat(int64_t senderId, const Json& request) {
         return;
     }
 
+    // 校验发送方和接收方是否是好友，不是则丢弃消息
+    if (!m_friendModel.IsFriend(senderId, receiverId)) {
+        return;
+    }
     Json message = request;
     // 客户端提供的发送方身份不可信，转发前用当前连接的登录身份覆盖。
     message["data"]["senderId"] = std::to_string(senderId);

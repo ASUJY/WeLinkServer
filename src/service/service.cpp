@@ -24,7 +24,7 @@ Service::Service()
                       [this](int64_t userId, const nlohmann::json& message) {
                           DeliverToUser(userId, message);
                       }),
-      m_chatService([this](int64_t userId, const nlohmann::json& message) {
+      m_chatService(m_friendModel, [this](int64_t userId, const nlohmann::json& message) {
           DeliverToUser(userId, message);
       }) {
     // m_msgHandlerMap.insert(
