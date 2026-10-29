@@ -295,15 +295,21 @@ void Service::OneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& 
 }
 
 void Service::HandleRedisSubscribeMessage(int64_t userid, const std::string& msg) {
+    const nlohmann::json message = nlohmann::json::parse(msg);
+
     {
         std::lock_guard<mutex> lock(m_connMtx);
         auto it = m_userConnMap.find(userid);
         if (it != m_userConnMap.end()) {
             // it->second->send(msg);
-            nlohmann::json js = nlohmann::json::parse(msg);
-            SendJson(it->second, js);
+            SendJson(it->second, message);
             return;
         }
+    }
+
+    // 好友申请只是在线通知，接收方离线时不写入离线消息表。
+    if (message.value("msgtype", -1) == static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)) {
+        return;
     }
     m_offlineMsgModel.Insert(userid, msg);
 }
@@ -352,6 +358,11 @@ void Service::DeliverToUser(int64_t userId, const nlohmann::json& message) {
     // 用户是否在其他服务器
     if (m_userChangeModel.QueryState(userId) == "online") {
         m_redis.Publish(userId, message.dump());
+        return;
+    }
+
+    // 用户离线时不保留好友申请消息，因为已经保存到了im_friendrequest中
+    if (message.value("msgtype", -1) == static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)) {
         return;
     }
 
