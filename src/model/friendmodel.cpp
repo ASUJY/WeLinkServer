@@ -25,8 +25,8 @@ vector<User> FriendModel::Query(int64_t userid) {
 
     std::vector<std::vector<std::string>> rows;
     const std::vector<SqlParam> params = {{SqlParam::Type::INT64, userid, ""}};
-    if (!mysql.QueryStmt("select a.id, a.name, a.state from im_user a inner join im_friend b on "
-                         "b.friendid = a.id where b.userid = ?",
+    if (!mysql.QueryStmt("select a.uid, a.nickname from im_user a inner join im_friend b on "
+                         "b.friendid = a.uid where b.userid = ?",
                          params, rows)) {
         return users;
     }
