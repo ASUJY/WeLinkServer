@@ -78,12 +78,12 @@ public:
 
     const muduo::net::TcpConnectionPtr& Connection() const { return m_conn; }
 
-    void DisconnectPeer() {
-        if (m_peerFd >= 0) {
-            close(m_peerFd);
-            m_peerFd = -1;
-        }
-    }
+    // void DisconnectPeer() {
+    //     if (m_peerFd >= 0) {
+    //         close(m_peerFd);
+    //         m_peerFd = -1;
+    //     }
+    // }
 
     bool HasReadableData(int timeoutMs) const {
         pollfd descriptor{};
@@ -161,16 +161,9 @@ protected:
         return request;
     }
 
-    nlohmann::json Register(TestConnection& connection, const std::string& tag) {
-        static std::atomic<uint64_t> sequence{0};
-        const std::string unique = tag + "_" + std::to_string(sequence.fetch_add(1));
-        return RegisterWithFields(connection, "139" + std::to_string(sequence.load()), unique,
-                                  "service-test-password", "test-avatar");
-    }
-
-    nlohmann::json RegisterWithFields(TestConnection& connection, const std::string& phone,
-                                      const std::string& username, const std::string& password,
-                                      const std::string& avatar) {
+    nlohmann::json Register(TestConnection& connection, const std::string& phone,
+                            const std::string& username, const std::string& password,
+                            const std::string& avatar) {
         nlohmann::json request = {{"msgtype", static_cast<int>(E_MSG_TYPE::REG_MSG)},
                                   {"data",
                                    {{"phone", phone},
@@ -184,29 +177,6 @@ protected:
             m_userIds.push_back(response.at("data").at("userid").get<int64_t>());
         }
         return response;
-    }
-
-    int64_t FindUserIdByName(const std::string& username) {
-        MySqlDB db;
-        if (!db.Connect()) return -1;
-        MYSQL_RES* result = db.Query("select uid from im_user where nickname='" + username + "'");
-        if (result == nullptr) return -1;
-        MYSQL_ROW row        = mysql_fetch_row(result);
-        const int64_t userId = row == nullptr ? -1 : std::stoll(row[0]);
-        mysql_free_result(result);
-        return userId;
-    }
-
-    std::string ReadStoredPassword(int64_t userId) {
-        MySqlDB db;
-        if (!db.Connect()) return {};
-        MYSQL_RES* result =
-            db.Query("select password from im_user where uid=" + std::to_string(userId));
-        if (result == nullptr) return {};
-        MYSQL_ROW row              = mysql_fetch_row(result);
-        const std::string password = row == nullptr ? "" : row[0];
-        mysql_free_result(result);
-        return password;
     }
 
     nlohmann::json Login(TestConnection& connection, const std::string& username,
@@ -226,19 +196,6 @@ protected:
         return connection.ReadJson();
     }
 
-    int64_t FriendRelationCount(int64_t userId, int64_t friendId) {
-        MySqlDB db;
-        if (!db.Connect()) return -1;
-        MYSQL_RES* result =
-            db.Query("select count(*) from im_friend where userid=" + std::to_string(userId) +
-                     " and friendid=" + std::to_string(friendId));
-        if (result == nullptr) return -1;
-        MYSQL_ROW row       = mysql_fetch_row(result);
-        const int64_t count = row == nullptr ? -1 : std::stoll(row[0]);
-        mysql_free_result(result);
-        return count;
-    }
-
     void TrackLogin(int64_t userId, TestConnection& connection) {
         m_loggedIn.emplace_back(userId, connection.Connection());
     }
@@ -253,13 +210,182 @@ protected:
 };
 }  // namespace
 
+TEST_F(OneChatIntegrationTest, OnlineUserNotFriendNoSendMsg) {
+    // 登录注册sender
+    const auto sender =
+        Register(*m_first, "13311111111", "service_sender", "onechat-test-password", "test-avatar");
+    int64_t senderId             = sender.at("data").at("userid").get<int64_t>();
+    const std::string senderName = sender.at("data").at("username").get<std::string>();
+    const auto senderLogin       = Login(*m_first, senderName, "onechat-test-password");
+    ASSERT_EQ(senderLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(senderId, *m_first);
+
+    // 登录注册receiver
+    const auto receiver            = Register(*m_second, "13333333333", "service_receiver",
+                                              "onechat-test-password", "test-avatar");
+    int64_t receiverId             = receiver.at("data").at("userid").get<int64_t>();
+    const std::string receiverName = receiver.at("data").at("username").get<std::string>();
+    const auto receiverLogin       = Login(*m_second, receiverName, "onechat-test-password");
+    ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    TrackLogin(receiverId, *m_second);
+
+    // sender 向 receiver发送消息
+    // 未添加为好友的时候不能发送信息给对方
+    nlohmann::json receiverChat = {
+        {"msgtype", static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)},
+        {"data", {{"receiverId", receiverId}, {"text", "online chat payload"}}}};
+    Call(m_first->Connection(), receiverChat);
+    EXPECT_THROW(m_second->ReadJson(), std::runtime_error);
+}
+
+TEST_F(OneChatIntegrationTest, OfflineUserNotFriendNoSendMsg) {
+    // 登录注册sender
+    const auto sender =
+        Register(*m_first, "13311111111", "service_sender", "onechat-test-password", "test-avatar");
+    int64_t senderId             = sender.at("data").at("userid").get<int64_t>();
+    const std::string senderName = sender.at("data").at("username").get<std::string>();
+    const auto senderLogin       = Login(*m_first, senderName, "onechat-test-password");
+    ASSERT_EQ(senderLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(senderId, *m_first);
+
+    // 注册offline，测试离线用户
+    const auto offline = Register(*m_second, "13333333333", "service_offline",
+                                  "onechat-test-password", "test-avatar");
+    ASSERT_EQ(offline.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    int64_t offlineId             = offline.at("data").at("userid").get<int64_t>();
+    const std::string offlineName = offline.at("data").at("username").get<std::string>();
+
+    nlohmann::json offlineChat = {
+        {"msgtype", static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)},
+        {"data", {{"receiverId", offlineId}, {"text", "offline payload"}}}};
+    Call(m_first->Connection(), offlineChat);
+
+    const auto queued = OfflineMsgModel().Query(offlineId);
+    for (auto it = queued.begin(); it != queued.end(); ++it) {
+        std::cout << "Offlinemessage: " << *it << std::endl;
+    }
+    ASSERT_EQ(queued.size(), 0);
+    bool foundChat = false;
+    for (const auto& message : queued) {
+        const auto queuedJson = nlohmann::json::parse(message);
+        const int messageType = queuedJson.at("msgtype").get<int>();
+        if (messageType == static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)) {
+            foundChat = queuedJson.at("data").at("text").get<std::string>() == "offline payload";
+        }
+    }
+    EXPECT_FALSE(foundChat);
+}
+
+TEST_F(OneChatIntegrationTest, OfflineUserIsFriendSendMsg) {
+    const auto sender =
+        Register(*m_first, "13311111111", "service_sender", "onechat-test-password", "test-avatar");
+    const auto receiver = Register(*m_second, "13322222222", "service_receiver",
+                                   "onechat-test-password", "test-avatar");
+    ASSERT_EQ(sender.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    int64_t senderId               = sender.at("data").at("userid").get<int64_t>();
+    int64_t receiverId             = receiver.at("data").at("userid").get<int64_t>();
+    const std::string senderName   = sender.at("data").at("username").get<std::string>();
+    const std::string receiverName = receiver.at("data").at("username").get<std::string>();
+
+    const auto senderLogin = Login(*m_first, senderName, "onechat-test-password");
+    ASSERT_EQ(senderLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(senderId, *m_first);
+
+    const auto receiverLogin = Login(*m_second, receiverName, "onechat-test-password");
+    ASSERT_EQ(receiverLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(receiverId, *m_second);
+
+    // sender用户向receiver用户发起添加好友申请
+    nlohmann::json friendRequest = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
+                                    {"data",
+                                     {{"userid", senderId},
+                                      {"username", senderName},
+                                      {"friendid", receiverId},
+                                      {"friendname", receiverName}}}};
+    Call(m_first->Connection(), friendRequest);
+    const auto deliveredRequest = m_second->ReadJson();
+    EXPECT_EQ(deliveredRequest.at("msgtype").get<int>(),
+              static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ));
+    EXPECT_EQ(deliveredRequest.at("data").at("senderid").get<int64_t>(), senderId);
+
+    // receiver用户接受好友请求后，好友关系写入im_friend表，
+    // 同时好友申请从im_friendrequest表中删除；sender用户能接收到receive用户的同意请求
+    nlohmann::json friendAck = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
+                                {"data",
+                                 {{"userid", receiverId},
+                                  {"username", receiverName},
+                                  {"friendid", senderId},
+                                  {"friendname", senderName},
+                                  {"ackType", FriendState::ACCEPT}}}};
+    Call(m_second->Connection(), friendAck);
+    const auto deliveredAck = m_first->ReadJson();
+    EXPECT_EQ(deliveredAck.at("msgtype").get<int>(), static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK));
+
+    MySqlDB friendDb;
+    ASSERT_TRUE(friendDb.Connect());
+    MYSQL_RES* relation =
+        friendDb.Query("select count(*) from im_friend where userid=" + std::to_string(senderId) +
+                       " and friendid=" + std::to_string(receiverId));
+    ASSERT_NE(relation, nullptr);
+    MYSQL_ROW relationRow = mysql_fetch_row(relation);
+    ASSERT_NE(relationRow, nullptr);
+    EXPECT_EQ(std::string(relationRow[0]), "1");
+    mysql_free_result(relation);
+
+    // receiver下线
+    m_service->ClientCloseException(m_second->Connection());
+    EXPECT_EQ(UserChangeModel().QueryState(receiverId), "offline");
+
+    // sender用户能向receive用户发送消息
+    nlohmann::json chat = {
+        {"msgtype", static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)},
+        {"data", {{"receiverId", std::to_string(receiverId)}, {"text", "offline chat payload"}}}};
+    Call(m_first->Connection(), chat);
+    const auto queued = OfflineMsgModel().Query(receiverId);
+    for (auto it = queued.begin(); it != queued.end(); ++it) {
+        std::cout << "Offlinemessage: " << *it << std::endl;
+    }
+    ASSERT_EQ(queued.size(), 1);
+    bool foundChat = false;
+    for (const auto& message : queued) {
+        const auto queuedJson = nlohmann::json::parse(message);
+        const int messageType = queuedJson.at("msgtype").get<int>();
+        if (messageType == static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)) {
+            foundChat =
+                queuedJson.at("data").at("text").get<std::string>() == "offline chat payload";
+        }
+    }
+    EXPECT_TRUE(foundChat);
+
+    // 已下线的receiver用户向sender用户发送消息
+    nlohmann::json forgedChat = {{"msgtype", static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)},
+                                 {"data",
+                                  {{"senderId", receiverId},
+                                   {"receiverId", senderId},
+                                   {"text", "forged unauthenticated chat"}}}};
+    Call(m_second->Connection(), forgedChat);
+
+    EXPECT_FALSE(m_second->HasReadableData(250));
+    EXPECT_TRUE(OfflineMsgModel().Query(senderId).empty());
+}
+
 TEST_F(OneChatIntegrationTest, UnauthenticatedConnectionCannotSendChat) {
-    const auto receiver = Register(*m_second, "service_spoof_chat_receiver");
+    const auto receiver = Register(*m_second, "13777777777", "service_spoof_chat_receiver",
+                                   "onechat-test-password", "test-avatar");
     ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
     const int64_t receiverId = receiver.at("data").at("userid").get<int64_t>();
     const auto receiverName  = receiver.at("data").at("username").get<std::string>();
-    const auto login         = Login(*m_second, receiverName, "service-test-password");
+    const auto login         = Login(*m_second, receiverName, "onechat-test-password");
     ASSERT_EQ(login.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
     TrackLogin(receiverId, *m_second);
@@ -276,8 +402,10 @@ TEST_F(OneChatIntegrationTest, UnauthenticatedConnectionCannotSendChat) {
 }
 
 TEST_F(OneChatIntegrationTest, ChatSenderIdComesFromAuthenticatedConnection) {
-    const auto sender   = Register(*m_first, "service_chat_sender_identity");
-    const auto receiver = Register(*m_second, "service_chat_receiver_identity");
+    const auto sender   = Register(*m_first, "13611111111", "service_chat_sender_identity",
+                                   "onechat-test-password", "test-avatar");
+    const auto receiver = Register(*m_second, "13611111112", "service_chat_receiver_identity",
+                                   "onechat-test-password", "test-avatar");
     ASSERT_EQ(sender.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
     ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
@@ -287,14 +415,51 @@ TEST_F(OneChatIntegrationTest, ChatSenderIdComesFromAuthenticatedConnection) {
     const auto senderName    = sender.at("data").at("username").get<std::string>();
     const auto receiverName  = receiver.at("data").at("username").get<std::string>();
 
-    const auto senderLogin = Login(*m_first, senderName, "service-test-password");
+    const auto senderLogin = Login(*m_first, senderName, "onechat-test-password");
     ASSERT_EQ(senderLogin.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
     TrackLogin(senderId, *m_first);
-    const auto receiverLogin = Login(*m_second, receiverName, "service-test-password");
+    const auto receiverLogin = Login(*m_second, receiverName, "onechat-test-password");
     ASSERT_EQ(receiverLogin.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
     TrackLogin(receiverId, *m_second);
+
+    // sender用户向receiver用户发起添加好友申请
+    nlohmann::json friendRequest = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
+                                    {"data",
+                                     {{"userid", senderId},
+                                      {"username", senderName},
+                                      {"friendid", receiverId},
+                                      {"friendname", receiverName}}}};
+    Call(m_first->Connection(), friendRequest);
+    const auto deliveredRequest = m_second->ReadJson();
+    EXPECT_EQ(deliveredRequest.at("msgtype").get<int>(),
+              static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ));
+    EXPECT_EQ(deliveredRequest.at("data").at("senderid").get<int64_t>(), senderId);
+
+    // receiver用户接受好友请求后，好友关系写入im_friend表，
+    // 同时好友申请从im_friendrequest表中删除；sender用户能接收到receive用户的同意请求
+    nlohmann::json friendAck = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
+                                {"data",
+                                 {{"userid", receiverId},
+                                  {"username", receiverName},
+                                  {"friendid", senderId},
+                                  {"friendname", senderName},
+                                  {"ackType", FriendState::ACCEPT}}}};
+    Call(m_second->Connection(), friendAck);
+    const auto deliveredAck = m_first->ReadJson();
+    EXPECT_EQ(deliveredAck.at("msgtype").get<int>(), static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK));
+
+    MySqlDB friendDb;
+    ASSERT_TRUE(friendDb.Connect());
+    MYSQL_RES* relation =
+        friendDb.Query("select count(*) from im_friend where userid=" + std::to_string(senderId) +
+                       " and friendid=" + std::to_string(receiverId));
+    ASSERT_NE(relation, nullptr);
+    MYSQL_ROW relationRow = mysql_fetch_row(relation);
+    ASSERT_NE(relationRow, nullptr);
+    EXPECT_EQ(std::string(relationRow[0]), "1");
+    mysql_free_result(relation);
 
     nlohmann::json chat = {{"msgtype", static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)},
                            {"data",
@@ -304,4 +469,65 @@ TEST_F(OneChatIntegrationTest, ChatSenderIdComesFromAuthenticatedConnection) {
     Call(m_first->Connection(), chat);
     const auto delivered = m_second->ReadJson();
     EXPECT_EQ(delivered.at("data").at("senderId").get<std::string>(), std::to_string(senderId));
+}
+
+TEST_F(OneChatIntegrationTest, SendMessageByRedis) {
+    const auto remote =
+        Register(*m_first, "16888888888", "service_remote", "onechat-test-password", "test-avatar");
+    ASSERT_EQ(remote.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const int64_t remoteId = remote.at("data").at("userid").get<int64_t>();
+    ASSERT_TRUE(UserChangeModel().UpdateState(remoteId, "online"));
+
+    // 发送方必须已认证；接收方只标记为在线，不登录到当前 Service。
+    // 注册登录发送方
+    const auto sender = Register(*m_second, "16888888889", "service_redis_sender",
+                                 "onechat-test-password", "test-avatar");
+    ASSERT_EQ(sender.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const int64_t senderId = sender.at("data").at("userid").get<int64_t>();
+    const auto senderName  = sender.at("data").at("username").get<std::string>();
+    const auto senderLogin = Login(*m_second, senderName, "onechat-test-password");
+    ASSERT_EQ(senderLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(senderId, *m_second);
+
+    // 只需建立发送方向的好友关系，聊天服务会据此校验发送权限。
+    FriendModel friendModel;
+    friendModel.Insert(senderId, remoteId);
+    ASSERT_TRUE(friendModel.IsFriend(senderId, remoteId));
+
+    std::mutex remoteMutex;
+    std::condition_variable remoteCondition;
+    bool remoteReceived = false;
+    std::string remoteMessage;
+    int64_t remoteChannel = 0;
+    Redis remoteRedis;
+    ASSERT_TRUE(remoteRedis.Connect());
+    remoteRedis.InitNotifyHandler([&](int64_t channel, const std::string& message) {
+        {
+            std::lock_guard<std::mutex> lock(remoteMutex);
+            remoteChannel  = channel;
+            remoteMessage  = message;
+            remoteReceived = true;
+        }
+        remoteCondition.notify_one();
+    });
+    ASSERT_TRUE(remoteRedis.Subscribe(remoteId));
+
+    nlohmann::json remoteChat = {{"msgtype", static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)},
+                                 {"data", {{"receiverId", remoteId}, {"text", "remote payload"}}}};
+    Call(m_second->Connection(), remoteChat);
+    {
+        std::unique_lock<std::mutex> lock(remoteMutex);
+        ASSERT_TRUE(remoteCondition.wait_for(lock, std::chrono::seconds(3),
+                                             [&] { return remoteReceived; }));
+        EXPECT_EQ(remoteChannel, remoteId);
+        const auto forwarded = nlohmann::json::parse(remoteMessage);
+        EXPECT_EQ(forwarded.at("msgtype").get<int>(), static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG));
+        EXPECT_EQ(forwarded.at("data").at("senderId").get<std::string>(), std::to_string(senderId));
+        EXPECT_EQ(forwarded.at("data").at("receiverId").get<int64_t>(), remoteId);
+        EXPECT_EQ(forwarded.at("data").at("text").get<std::string>(), "remote payload");
+    }
+    EXPECT_TRUE(remoteRedis.Unsubscribe(remoteId));
 }
