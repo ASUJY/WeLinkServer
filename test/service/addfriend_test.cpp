@@ -319,9 +319,9 @@ TEST_F(AddFriendIntegrationTest, FriendRequestsAndChatsRouteToOfflineUsers) {
               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
     TrackLogin(senderId, *m_first);
 
-    // 注册offlin，测试离线用户
-    const auto offline =
-        Register(*m_first, "13333333333", "service_offline", "friend-test-password", "test-avatar");
+    // 注册offline，测试离线用户
+    const auto offline = Register(*m_second, "13333333333", "service_offline",
+                                  "friend-test-password", "test-avatar");
     ASSERT_EQ(offline.at("data").at("errtype").get<int>(),
               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
     int64_t offlineId             = offline.at("data").at("userid").get<int64_t>();
@@ -362,168 +362,258 @@ TEST_F(AddFriendIntegrationTest, FriendRequestsAndChatsRouteToOfflineUsers) {
     }
     EXPECT_FALSE(foundFriendRequest);
     EXPECT_FALSE(foundChat);
-
-    // const auto remote =
-    //     Register(*m_first, "13344444444", "service_remote", "friend-test-password",
-    //     "test-avatar");
-    // ASSERT_EQ(remote.at("data").at("errtype").get<int>(),
-    //           static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-    // const int64_t remoteId = remote.at("data").at("userid").get<int64_t>();
-    // ASSERT_TRUE(UserChangeModel().UpdateState(remoteId, "online"));
-
-    // std::mutex remoteMutex;
-    // std::condition_variable remoteCondition;
-    // bool remoteReceived = false;
-    // std::string remoteMessage;
-    // int64_t remoteChannel = 0;
-    // Redis remoteRedis;
-    // ASSERT_TRUE(remoteRedis.Connect());
-    // remoteRedis.InitNotifyHandler([&](int64_t channel, const std::string& message) {
-    //     {
-    //         std::lock_guard<std::mutex> lock(remoteMutex);
-    //         remoteChannel  = channel;
-    //         remoteMessage  = message;
-    //         remoteReceived = true;
-    //     }
-    //     remoteCondition.notify_one();
-    // });
-    // ASSERT_TRUE(remoteRedis.Subscribe(remoteId));
-    // std::this_thread::sleep_for(std::chrono::milliseconds(100));
-
-    // nlohmann::json remoteChat = {
-    //     {"msgtype", static_cast<int>(E_MSG_TYPE::ONE_CHAT_MSG)},
-    //     {"data", {{"receiverId", std::to_string(remoteId)}, {"text", "remote payload"}}}};
-    // Call(m_first->Connection(), remoteChat);
-    // {
-    //     std::unique_lock<std::mutex> lock(remoteMutex);
-    //     ASSERT_TRUE(remoteCondition.wait_for(lock, std::chrono::seconds(3),
-    //                                          [&] { return remoteReceived; }));
-    //     EXPECT_EQ(remoteChannel, remoteId);
-    //     const auto forwarded = nlohmann::json::parse(remoteMessage);
-    //     EXPECT_EQ(forwarded.at("data").at("text").get<std::string>(), "remote payload");
-    // }
-    // EXPECT_TRUE(remoteRedis.Unsubscribe(remoteId));
 }
 
-// TEST_F(AddFriendIntegrationTest, UnauthenticatedConnectionCannotSpoofFriendRequestSender) {
-//     const auto receiver = Register(*m_second, "service_spoof_receiver");
-//     ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-//     const auto receiverId   = receiver.at("data").at("userid").get<int64_t>();
-//     const auto receiverName = receiver.at("data").at("username").get<std::string>();
-//     const auto login        = Login(*m_second, receiverName, "service-test-password");
-//     ASSERT_EQ(login.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
-//     TrackLogin(receiverId, *m_second);
+TEST_F(AddFriendIntegrationTest, RejectFriendRequestsToOfflineUsers) {
+    const auto sender =
+        Register(*m_first, "13311111111", "service_sender", "friend-test-password", "test-avatar");
+    const auto receiver = Register(*m_second, "13322222222", "service_receiver",
+                                   "friend-test-password", "test-avatar");
+    ASSERT_EQ(sender.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    int64_t senderId               = sender.at("data").at("userid").get<int64_t>();
+    int64_t receiverId             = receiver.at("data").at("userid").get<int64_t>();
+    const std::string senderName   = sender.at("data").at("username").get<std::string>();
+    const std::string receiverName = receiver.at("data").at("username").get<std::string>();
 
-//     nlohmann::json forged = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
-//                              {"data",
-//                               {{"userid", "123456789"},
-//                                {"username", "forged"},
-//                                {"friendid", std::to_string(receiverId)},
-//                                {"friendname", receiverName}}}};
-//     Call(m_first->Connection(), forged);  // m_first has not authenticated.
+    const auto senderLogin = Login(*m_first, senderName, "friend-test-password");
+    ASSERT_EQ(senderLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(senderId, *m_first);
 
-//     EXPECT_FALSE(m_second->HasReadableData(250));
-//     EXPECT_TRUE(OfflineMsgModel().Query(receiverId).empty());
-// }
+    const auto receiverLogin = Login(*m_second, receiverName, "friend-test-password");
+    ASSERT_EQ(receiverLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(receiverId, *m_second);
 
-// TEST_F(AddFriendIntegrationTest, AcceptingFriendRequestPersistsRelationWhenRequesterIsOffline) {
-//     const auto requester = Register(*m_first, "service_offline_friend_requester");
-//     const auto recipient = Register(*m_second, "service_offline_friend_recipient");
-//     ASSERT_EQ(requester.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-//     ASSERT_EQ(recipient.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-//     const int64_t requesterId = requester.at("data").at("userid").get<int64_t>();
-//     const int64_t recipientId = recipient.at("data").at("userid").get<int64_t>();
-//     const auto requesterName  = requester.at("data").at("username").get<std::string>();
-//     const auto recipientName  = recipient.at("data").at("username").get<std::string>();
-//     const auto requesterLogin = Login(*m_first, requesterName, "service-test-password");
-//     ASSERT_EQ(requesterLogin.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
-//     TrackLogin(requesterId, *m_first);
-//     const auto login = Login(*m_second, recipientName, "service-test-password");
-//     ASSERT_EQ(login.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
-//     TrackLogin(recipientId, *m_second);
+    // sender用户向receiver用户发起添加好友申请
+    nlohmann::json friendRequest = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
+                                    {"data",
+                                     {{"userid", senderId},
+                                      {"username", senderName},
+                                      {"friendid", receiverId},
+                                      {"friendname", receiverName}}}};
+    Call(m_first->Connection(), friendRequest);
+    const auto deliveredRequest = m_second->ReadJson();
+    EXPECT_EQ(deliveredRequest.at("msgtype").get<int>(),
+              static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ));
+    EXPECT_EQ(deliveredRequest.at("data").at("senderid").get<int64_t>(), senderId);
+    EXPECT_EQ(QueryFriendRequestTable(senderId, receiverId), 1);
 
-//     nlohmann::json friendRequest = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
-//                                     {"data",
-//                                      {{"username", requesterName},
-//                                       {"friendid", std::to_string(recipientId)},
-//                                       {"friendname", recipientName}}}};
-//     Call(m_first->Connection(), friendRequest);
-//     ASSERT_EQ(m_second->ReadJson().at("msgtype").get<int>(),
-//               static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ));
-//     m_service->ClientCloseException(m_first->Connection());
+    // receiver用户拒绝好友请求后，好友申请从im_friendrequest表中删除；
+    nlohmann::json friendAck = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
+                                {"data",
+                                 {{"userid", receiverId},
+                                  {"username", receiverName},
+                                  {"friendid", senderId},
+                                  {"friendname", senderName},
+                                  {"ackType", FriendState::REJECT}}}};
+    Call(m_second->Connection(), friendAck);
+    const auto deliveredAck = m_first->ReadJson();
+    EXPECT_EQ(deliveredAck.at("msgtype").get<int>(), static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK));
+    sleep(1);
+    EXPECT_EQ(QueryFriendRequestTable(senderId, receiverId), 0);
+}
 
-//     nlohmann::json accept = {
-//         {"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
-//         {"data",
-//          {{"username", recipientName},
-//           {"friendid", std::to_string(requesterId)},
-//           {"friendname", requesterName},
-//           {"ackType", std::to_string(static_cast<int>(FriendState::ACCEPT))}}}};
-//     Call(m_second->Connection(), accept);
+TEST_F(AddFriendIntegrationTest, FriendRequestsACKRouteToOfflineUsers) {
+    // 登录注册sender
+    const auto sender =
+        Register(*m_first, "13511111111", "service_sender", "friend-test-password", "test-avatar");
+    int64_t senderId             = sender.at("data").at("userid").get<int64_t>();
+    const std::string senderName = sender.at("data").at("username").get<std::string>();
+    const auto senderLogin       = Login(*m_first, senderName, "friend-test-password");
+    ASSERT_EQ(senderLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(senderId, *m_first);
 
-//     EXPECT_EQ(FriendRelationCount(recipientId, requesterId), 1);
-//     EXPECT_EQ(FriendRelationCount(requesterId, recipientId), 1);
-// }
+    // 注册offline，测试离线用户
+    const auto offline = Register(*m_second, "13533333333", "service_offline",
+                                  "friend-test-password", "test-avatar");
+    ASSERT_EQ(offline.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    int64_t offlineId             = offline.at("data").at("userid").get<int64_t>();
+    const std::string offlineName = offline.at("data").at("username").get<std::string>();
+    const auto offlineLogin       = Login(*m_second, offlineName, "friend-test-password");
+    ASSERT_EQ(offlineLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(offlineId, *m_second);
 
-// TEST_F(AddFriendIntegrationTest, FriendAckCannotCreateRelationWithoutPendingRequest) {
-//     const auto actor  = Register(*m_first, "service_friend_ack_actor");
-//     const auto target = Register(*m_second, "service_friend_ack_target");
-//     ASSERT_EQ(actor.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-//     ASSERT_EQ(target.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-//     const int64_t actorId  = actor.at("data").at("userid").get<int64_t>();
-//     const int64_t targetId = target.at("data").at("userid").get<int64_t>();
-//     const auto actorName   = actor.at("data").at("username").get<std::string>();
-//     const auto targetName  = target.at("data").at("username").get<std::string>();
-//     const auto actorLogin  = Login(*m_first, actorName, "service-test-password");
-//     ASSERT_EQ(actorLogin.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
-//     TrackLogin(actorId, *m_first);
-//     const auto targetLogin = Login(*m_second, targetName, "service-test-password");
-//     ASSERT_EQ(targetLogin.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
-//     TrackLogin(targetId, *m_second);
+    // 离线用户offline 发送好友请求给sender，之后offline离线，
+    // sender发送给offline的同意请求会存入离线消息表,好友关系会写入im_friend表,同时好友申请从im_friendrequest表中删除
+    nlohmann::json offlineFriendRequest = {
+        {"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
+        {"data",
+         {{"userid", offlineId},
+          {"username", offlineName},
+          {"friendid", senderId},
+          {"friendname", senderName}}}};
+    Call(m_second->Connection(), offlineFriendRequest);
+    sleep(1);
+    // offline下线
+    m_service->ClientCloseException(m_second->Connection());
+    EXPECT_EQ(QueryFriendRequestTable(offlineId, senderId), 1);
+    EXPECT_EQ(UserChangeModel().QueryState(offlineId), "offline");
 
-//     nlohmann::json unsolicitedAccept = {
-//         {"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
-//         {"data",
-//          {{"username", actorName},
-//           {"friendid", std::to_string(targetId)},
-//           {"friendname", targetName},
-//           {"ackType", std::to_string(static_cast<int>(FriendState::ACCEPT))}}}};
-//     Call(m_first->Connection(), unsolicitedAccept);
+    // sender用户接受好友请求后，好友关系写入im_friend表，
+    // 同时好友申请从im_friendrequest表中删除；sender用户能接收到receive用户的同意请求
+    nlohmann::json friendAck = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
+                                {"data",
+                                 {{"userid", senderId},
+                                  {"username", senderName},
+                                  {"friendid", offlineId},
+                                  {"friendname", offlineName},
+                                  {"ackType", FriendState::ACCEPT}}}};
+    Call(m_first->Connection(), friendAck);
+    sleep(1);
+    MySqlDB friendDb;
+    ASSERT_TRUE(friendDb.Connect());
+    MYSQL_RES* relation =
+        friendDb.Query("select count(*) from im_friend where userid=" + std::to_string(senderId) +
+                       " and friendid=" + std::to_string(offlineId));
+    ASSERT_NE(relation, nullptr);
+    MYSQL_ROW relationRow = mysql_fetch_row(relation);
+    ASSERT_NE(relationRow, nullptr);
+    EXPECT_EQ(std::string(relationRow[0]), "1");
+    mysql_free_result(relation);
+    EXPECT_EQ(QueryFriendRequestTable(offlineId, senderId), 0);
 
-//     EXPECT_EQ(FriendRelationCount(actorId, targetId), 0);
-//     EXPECT_EQ(FriendRelationCount(targetId, actorId), 0);
-// }
+    const auto queued = OfflineMsgModel().Query(offlineId);
+    for (auto it = queued.begin(); it != queued.end(); ++it) {
+        std::cout << "Offlinemessage: " << *it << std::endl;
+    }
+    ASSERT_EQ(queued.size(), 1);
+    bool foundFriendRequest = false;
+    for (const auto& message : queued) {
+        const auto queuedJson = nlohmann::json::parse(message);
+        const int messageType = queuedJson.at("msgtype").get<int>();
+        foundFriendRequest |= messageType == static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK);
+    }
+    EXPECT_TRUE(foundFriendRequest);
+}
 
-// TEST_F(AddFriendIntegrationTest, UnauthenticatedConnectionCannotSubmitFriendAck) {
-//     const auto target = Register(*m_second, "service_unauth_ack_target");
-//     ASSERT_EQ(target.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
-//     const int64_t targetId = target.at("data").at("userid").get<int64_t>();
-//     const auto targetName  = target.at("data").at("username").get<std::string>();
-//     const auto targetLogin = Login(*m_second, targetName, "service-test-password");
-//     ASSERT_EQ(targetLogin.at("data").at("errtype").get<int>(),
-//               static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
-//     TrackLogin(targetId, *m_second);
+TEST_F(AddFriendIntegrationTest, AcceptingFriendRequestPersistsRelationWhenRequesterIsOffline) {
+    const auto requester = Register(*m_first, "13666666666", "service_offline_friend_requester",
+                                    "friend-test-password", "test-avatar");
+    const auto recipient = Register(*m_second, "13666666665", "service_offline_friend_recipient",
+                                    "friend-test-password", "test-avatar");
+    ASSERT_EQ(requester.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    ASSERT_EQ(recipient.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const int64_t requesterId = requester.at("data").at("userid").get<int64_t>();
+    const int64_t recipientId = recipient.at("data").at("userid").get<int64_t>();
+    const auto requesterName  = requester.at("data").at("username").get<std::string>();
+    const auto recipientName  = recipient.at("data").at("username").get<std::string>();
+    const auto requesterLogin = Login(*m_first, requesterName, "friend-test-password");
+    ASSERT_EQ(requesterLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(requesterId, *m_first);
+    const auto login = Login(*m_second, recipientName, "friend-test-password");
+    ASSERT_EQ(login.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(recipientId, *m_second);
 
-//     nlohmann::json forgedAck = {
-//         {"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
-//         {"data",
-//          {{"username", "forged"},
-//           {"friendid", std::to_string(targetId)},
-//           {"friendname", targetName},
-//           {"ackType", std::to_string(static_cast<int>(FriendState::ACCEPT))}}}};
-//     Call(m_first->Connection(), forgedAck);
+    nlohmann::json friendRequest = {
+        {"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
+        {"data",
+         {{"username", requesterName}, {"friendid", recipientId}, {"friendname", recipientName}}}};
+    Call(m_first->Connection(), friendRequest);
+    ASSERT_EQ(m_second->ReadJson().at("msgtype").get<int>(),
+              static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ));
+    m_service->ClientCloseException(m_first->Connection());
 
-//     EXPECT_FALSE(m_second->HasReadableData(250));
-//     EXPECT_EQ(FriendRelationCount(targetId, 123456789), 0);
-// }
+    nlohmann::json accept = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
+                             {"data",
+                              {{"username", recipientName},
+                               {"friendid", requesterId},
+                               {"friendname", requesterName},
+                               {"ackType", FriendState::ACCEPT}}}};
+    Call(m_second->Connection(), accept);
+    sleep(1);
+    EXPECT_EQ(FriendRelationCount(recipientId, requesterId), 1);
+    EXPECT_EQ(FriendRelationCount(requesterId, recipientId), 1);
+}
+
+TEST_F(AddFriendIntegrationTest, UnauthenticatedConnectionCannotSpoofFriendRequestSender) {
+    const auto receiver = Register(*m_second, "13255555555", "service_spoof_receiver",
+                                   "friend-test-password", "test-avatar");
+    ASSERT_EQ(receiver.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const auto receiverId   = receiver.at("data").at("userid").get<int64_t>();
+    const auto receiverName = receiver.at("data").at("username").get<std::string>();
+    const auto login        = Login(*m_second, receiverName, "friend-test-password");
+    ASSERT_EQ(login.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(receiverId, *m_second);
+
+    nlohmann::json forged = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_REQ)},
+                             {"data",
+                              {{"userid", "123456789"},
+                               {"username", "forged"},
+                               {"friendid", std::to_string(receiverId)},
+                               {"friendname", receiverName}}}};
+    Call(m_first->Connection(), forged);  // m_first has not authenticated.
+
+    EXPECT_FALSE(m_second->HasReadableData(250));
+    EXPECT_TRUE(OfflineMsgModel().Query(receiverId).empty());
+}
+
+TEST_F(AddFriendIntegrationTest, UnauthenticatedConnectionCannotSubmitFriendAck) {
+    const auto target = Register(*m_second, "13399999999", "service_unauth_ack_target",
+                                 "friend-test-password", "test-avatar");
+    ASSERT_EQ(target.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const int64_t targetId = target.at("data").at("userid").get<int64_t>();
+    const auto targetName  = target.at("data").at("username").get<std::string>();
+    const auto targetLogin = Login(*m_second, targetName, "friend-test-password");
+    ASSERT_EQ(targetLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(targetId, *m_second);
+
+    nlohmann::json forgedAck = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
+                                {"data",
+                                 {{"username", "forged"},
+                                  {"friendid", targetId},
+                                  {"friendname", targetName},
+                                  {"ackType", FriendState::ACCEPT}}}};
+    Call(m_first->Connection(), forgedAck);
+    sleep(1);
+    EXPECT_FALSE(m_second->HasReadableData(250));
+    EXPECT_EQ(FriendRelationCount(targetId, 123456789), 0);
+}
+
+TEST_F(AddFriendIntegrationTest, FriendAckCannotCreateRelationWithoutPendingRequest) {
+    const auto actor  = Register(*m_first, "13666666667", "service_friend_ack_actor",
+                                 "friend-test-password", "test-avatar");
+    const auto target = Register(*m_second, "13666666668", "service_friend_ack_target",
+                                 "friend-test-password", "test-avatar");
+    ASSERT_EQ(actor.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    ASSERT_EQ(target.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::REG_MSG_ACK_SUCCESS));
+    const int64_t actorId  = actor.at("data").at("userid").get<int64_t>();
+    const int64_t targetId = target.at("data").at("userid").get<int64_t>();
+    const auto actorName   = actor.at("data").at("username").get<std::string>();
+    const auto targetName  = target.at("data").at("username").get<std::string>();
+    const auto actorLogin  = Login(*m_first, actorName, "friend-test-password");
+    ASSERT_EQ(actorLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(actorId, *m_first);
+    const auto targetLogin = Login(*m_second, targetName, "friend-test-password");
+    ASSERT_EQ(targetLogin.at("data").at("errtype").get<int>(),
+              static_cast<int>(E_ERR_TYPE::LOGIN_MSG_ACK_SUCCESS));
+    TrackLogin(targetId, *m_second);
+
+    nlohmann::json unsolicitedAccept = {{"msgtype", static_cast<int>(E_MSG_TYPE::ADD_FRIEND_ACK)},
+                                        {"data",
+                                         {{"username", actorName},
+                                          {"friendid", targetId},
+                                          {"friendname", targetName},
+                                          {"ackType", FriendState::ACCEPT}}}};
+    Call(m_first->Connection(), unsolicitedAccept);
+    sleep(1);
+    EXPECT_EQ(FriendRelationCount(actorId, targetId), 0);
+    EXPECT_EQ(FriendRelationCount(targetId, actorId), 0);
+}
