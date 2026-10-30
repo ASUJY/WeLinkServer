@@ -67,6 +67,12 @@ void FriendService::AddFriendAck(int64_t userId, const Json& request) {
 
         const int64_t friendId = request.at("data").at("friendid");
 
+        // 查询是否有好友添加申请，没有则不能成功添加好友
+        auto res = m_friendRequestModel->Query(friendId, userId);
+        if (res.size() == 0) {
+            return;
+        }
+
         const int ackType                = request.at("data").at("ackType");
         response["data"]["senderid"]     = userId;
         response["data"]["sendername"]   = request.at("data").at("username");
