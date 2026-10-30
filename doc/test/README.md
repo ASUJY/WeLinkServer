@@ -24,6 +24,13 @@ WE_LINK_MYSQL_INTEGRATION=1 ctest --test-dir build --output-on-failure
 - MySQL 测试要求数据库已有 `offlinemessage(userid, message)` 和 `im_userchange(userid, state)` 表。测试使用独立的大 ID 并在结束时清理记录。
 
 ## 当前覆盖
+> 重点测试数据的格式和类型是否符合要求，不允许绕过登录进行任何操作，不允许用户间没有建立好友关系而进行好友之间的任何操作
+
 ![网络通信模块测试](./network_test.md)
 ![redis模块测试](./redis_integration_test.md)
-![数据库模块测试](./mysql_test.md)
+![数据库模块测试](./db_test.md)
+![注册业务模块测试](./service_register_test.md)
+![登录业务模块测试](./service_login_test.md)
+![好友业务模块测试](./service_friend_test.md)
+![聊天业务模块测试](./service_onechat_test.md)
+![读取配置模块测试](./config_test.md)
